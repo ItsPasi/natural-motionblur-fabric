@@ -18,7 +18,9 @@
       "cn.noryea.motionblur.MotionBlurMod"
     ]
   },
-  "mixins": [],
+  "mixins": [
+    "motionblur.mixins.json"
+  ],
   "depends": {
     "fabricloader": ">=0.11.3",
     "fabric-command-api-v1": "*",

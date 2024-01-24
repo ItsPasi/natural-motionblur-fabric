@@ -1,5 +1,5 @@
 plugins {
-	id 'fabric-loom' version '1.2-SNAPSHOT'
+	id 'fabric-loom' version '1.5-SNAPSHOT'
 	id 'io.github.juuxel.loom-quiltflower' version '1.7.2'
 }
 
@@ -21,10 +21,11 @@ configurations {
 repositories {
 	maven {
 		name = 'Ladysnake Mods'
-		url = 'https://ladysnake.jfrog.io/artifactory/mods'
+		url = 'https://maven.ladysnake.org/releases'
 		content {
 			includeGroup 'io.github.ladysnake'
-			includeGroupByRegex 'io\\.github\\.onyxstudios.*'
+			includeGroup 'org.ladysnake'
+			includeGroupByRegex 'dev\\.onyxstudios.*'
 		}
 	}
 	maven {
@@ -48,7 +49,7 @@ dependencies {
 	mappings "net.fabricmc:yarn:${project.yarn_mappings}:v2"
 	modImplementation "net.fabricmc:fabric-loader:${project.loader_version}"
 
-	modIncludeImplementation "io.github.ladysnake:satin:${satin_version}"
+	modIncludeImplementation "org.ladysnake:satin:${satin_version}"
 	modIncludeImplementation(fabricApi.module("fabric-command-api-v1", project.fabric_version))
 }
 

@@ -229,6 +229,20 @@ public class SimpleConfig {
     }
 
     /**
+     * Returns double value from config corresponding to the given
+     * key, or the default string if the key is missing or invalid.
+     *
+     * @return  value corresponding to the given key, or the default value
+     */
+    public float getOrDefault( String key, float def ) {
+        try {
+            return Float.parseFloat( get(key) );
+        } catch (Exception e) {
+            return def;
+        }
+    }
+
+    /**
      * If any error occurred during loading or reading from the config
      * a 'broken' flag is set, indicating that the config's state
      * is undefined and should be discarded using `delete()`
