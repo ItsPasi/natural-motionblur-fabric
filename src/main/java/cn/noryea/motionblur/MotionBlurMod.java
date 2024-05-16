@@ -53,9 +53,7 @@ public class MotionBlurMod implements ClientModInitializer {
                 }
                 motionblur.setUniformValue("view_res", (float) MinecraftClient.getInstance().getFramebuffer().viewportWidth, (float) MinecraftClient.getInstance().getFramebuffer().viewportHeight);
                 motionblur.setUniformValue("view_pixel_size", 1.0f / MinecraftClient.getInstance().getFramebuffer().viewportWidth, 1.0f / MinecraftClient.getInstance().getFramebuffer().viewportHeight);
-                if (!Screen.hasShiftDown()) {
-                    motionblur.render(deltaTick);
-                }
+                motionblur.render(deltaTick);
             }
         });
     }
