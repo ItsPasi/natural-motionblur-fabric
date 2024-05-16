@@ -100,9 +100,9 @@ void main() {
         float depth = texelFetch(DiffuseDepthSampler, view_tap, 0).x;
         float weight = (clamp01(pos) == pos) ? 1.0 : 0.0;
 
-        color_sum += color * weight;
+        color_sum += color * color * weight;
         weight_sum += weight;
     }
 
-    color = vec4(color_sum * rcp(weight_sum), 1.0);
+    color = vec4(sqrt(color_sum * rcp(weight_sum)), 1.0);
 }
