@@ -1,33 +1,15 @@
-package cn.noryea.motionblur.config;
+package net.natural.motionblur.config;
 
-import cn.noryea.motionblur.MotionBlurMod;
-import com.mojang.datafixers.util.Pair;
+
+import org.lwjgl.glfw.GLFW;
 
 public class MotionBlurConfig {
 
-    public static SimpleConfig CONFIG;
-    private static MotionBlurConfigProvider provider;
+    public float motionBlurStrength = 1.0F;
+    public int motionBlurSamples = 20;
+    public boolean renderF5 = true;
+    public boolean enabled = true;
+    public int toggleKey = GLFW.GLFW_KEY_V;
 
-    public static float MOTIONBLUR_AMOUNT;  //是动态模糊量
-
-    public static void registerConfigs(float amount) {
-        provider = new MotionBlurConfigProvider();
-
-        provider.addKeyValuePair(new Pair<>("motionblur.amount", amount), "float");
-        CONFIG = SimpleConfig.of(MotionBlurMod.ID).provider(provider).request();
-
-        syncConfigs();
-    }
-
-    private static void syncConfigs() {
-        MOTIONBLUR_AMOUNT = CONFIG.getOrDefault("motionblur.amount", 1.0f);
-
-        //System.out.println(provider.getConfigsList().size() + " have been set.");
-    }
-
-    public static void update(float value) {
-        CONFIG.delete();
-        registerConfigs(value);
-    }
 
 }

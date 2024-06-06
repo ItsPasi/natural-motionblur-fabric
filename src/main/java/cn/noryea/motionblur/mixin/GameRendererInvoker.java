@@ -1,4 +1,4 @@
-package cn.noryea.motionblur.mixin;
+package net.natural.motionblur.mixin;
 
 import net.minecraft.client.render.Camera;
 import net.minecraft.client.render.GameRenderer;
