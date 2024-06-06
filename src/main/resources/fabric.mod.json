@@ -5,6 +5,12 @@
   "name": "Natural Motion Blur",
   "description": "Natural Motion Blur Mod.",
   "authors": [
+    "ItsPasi"
+  ],
+  "contributors": [
+    "IMS212", 
+    "Romain H",
+    "What42Pizza"
   ],
   "license": "LGPL-3.0",
   "environment": "client",
