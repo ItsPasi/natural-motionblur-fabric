@@ -1,21 +1,16 @@
 {
   "schemaVersion": 1,
-  "id": "motionblur",
+  "id": "naturalmotionblur",
   "version": "${version}",
-  "name": "Motion Blur",
-  "description": "New Motion Blur Mod.",
+  "name": "Natural Motion Blur",
+  "description": "Natural Motion Blur Mod.",
   "authors": [
-    "Noryea"
   ],
-  "contact": {
-    "sources": "https://github.com/Noryea/motionblur-fabric",
-    "issue": "https://github.com/Noryea/motionblur-fabric/issues"
-  },
   "license": "LGPL-3.0",
   "environment": "client",
   "entrypoints": {
     "client": [
-      "cn.noryea.motionblur.MotionBlurMod"
+      "net.natural.motionblur.MotionBlurMod"
     ]
   },
   "mixins": [
@@ -26,5 +21,6 @@
     "fabric-command-api-v1": "*",
     "satin": "*",
     "java": ">=17"
-  }
+  },
+  "icon": "icon.png"
 }
