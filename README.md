@@ -7,7 +7,7 @@ This motion blur mod aims to closely mimic human vision motion blur by blending 
 
 It is highly recommended to use the default strength value together with a framerate limit that matches your monitor's refresh rate. Best results are achieved by using V-sync.
 
-The config GUI can be accesed via these commands: ```/motionblur``` ```/mb```
+The config GUI can be accessed via these commands: ```/motionblur``` ```/mb```
 <br/><br/><br/><br/>
 Made with the help of IMS, What42Pizza and Romain H.
 
