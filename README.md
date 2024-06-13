@@ -15,8 +15,18 @@ Made with the help of IMS, What42Pizza and Romain H.
 
 ## Download
 
-The current version can be found on the [releases](https://github.com/ItsPasi/natural-motionblur-fabric/releases) tab.
+The current version can be found on the [releases](https://github.com/ItsPasi/natural-motionblur-fabric/releases) tab and on [Modrinth](https://modrinth.com/mod/natural-motion-blur).
 
+## Feature List
+- Blur toggle
+- F5 blur toggle
+- Blur stength
+- Sample amount
+
+## Issues
+- Translucent objects do not blur correctly. (probably not fixable because of how vanilla shaders work)
+- Riding entities causes too much blur. (don't know if fixable)
+  
 ## Motionblur Examples
 
 ![Part 1](https://github.com/ItsPasi/natural-motionblur-fabric/blob/main/docs/blur%20example.png)
