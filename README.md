@@ -20,7 +20,7 @@ The current version can be found on the [releases](https://github.com/ItsPasi/na
 ## Feature List
 - Blur toggle
 - F5 blur toggle
-- Blur stength
+- Blur strength
 - Sample amount
 
 ## Issues
