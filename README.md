@@ -1,5 +1,5 @@
 <p align="center">
-    <img src="https://github.com/ItsPasi/natural-motionblur-fabric/blob/main/docs/blur%20icon%20320px.png" />
+    <img src="https://github.com/ItsPasi/natural-motionblur-fabric/blob/1.20.6-fabric/docs/blur%20icon%20320px.png" />
     <h1 align="center">Natural Motion Blur</h1>
 </p>
 
@@ -11,7 +11,7 @@ The config GUI can be accessed via these commands: ```/motionblur``` ```/mb```
 <br/><br/><br/><br/>
 Made with the help of IMS, What42Pizza and Romain H.
 
-<img src="https://github.com/ItsPasi/natural-motionblur-fabric/blob/main/docs/blur%20thumbnail.png" />
+<img src="https://github.com/ItsPasi/natural-motionblur-fabric/blob/1.20.6-fabric/docs/blur%20thumbnail.png" />
 
 ## Download
 
@@ -29,7 +29,7 @@ The current version can be found on the [releases](https://github.com/ItsPasi/na
   
 ## Motionblur Examples
 
-![Part 1](https://github.com/ItsPasi/natural-motionblur-fabric/blob/main/docs/blur%20example.png)
+![Part 1](https://github.com/ItsPasi/natural-motionblur-fabric/blob/1.20.6-fabric/docs/blur%20example.png)
 
 https://github.com/ItsPasi/natural-motionblur-fabric/assets/12584747/2960d42d-2fac-4a04-818e-44b0d79e3fef
 
