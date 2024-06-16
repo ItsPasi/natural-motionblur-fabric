@@ -3,9 +3,9 @@ package net.natural.motionblur;
 import net.natural.motionblur.config.MotionBlurConfig;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
-import ladysnake.satin.api.event.PostWorldRenderCallbackV2;
-import ladysnake.satin.api.managed.ManagedShaderEffect;
-import ladysnake.satin.api.managed.ShaderEffectManager;
+import org.ladysnake.satin.api.event.PostWorldRenderCallbackV2;
+import org.ladysnake.satin.api.managed.ManagedShaderEffect;
+import org.ladysnake.satin.api.managed.ShaderEffectManager;
 import me.shedaniel.clothconfig2.api.*;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.command.v2.ClientCommandManager;
@@ -33,7 +33,7 @@ public class MotionBlurMod implements ClientModInitializer {
 
     private static MotionBlurConfig config;
 
-    private static final ManagedShaderEffect motionblur = ShaderEffectManager.getInstance().manage(new Identifier(ID, "shaders/post/motion_blur.json"),
+    private static final ManagedShaderEffect motionblur = ShaderEffectManager.getInstance().manage(Identifier.of(ID, "shaders/post/motion_blur.json"),
             shader -> shader.setUniformValue("BlendFactor", config.motionBlurStrength * 2));
     private static Gson GSON = new GsonBuilder().setLenient().setPrettyPrinting().create();
     private static KeyBinding toggleKeybinding;
@@ -120,7 +120,7 @@ public class MotionBlurMod implements ClientModInitializer {
             }));
         });
 
-        PostWorldRenderCallbackV2.EVENT.register((matrix, camera, deltaTick, a) -> {
+        PostWorldRenderCallbackV2.EVENT.register((matrix, camera, deltaTick) -> {
             if (config.motionBlurStrength != 0 && config.enabled) {
                 if (currentBlur != config.motionBlurStrength) {
                     motionblur.setUniformValue("BlendFactor", config.motionBlurStrength * 2);
