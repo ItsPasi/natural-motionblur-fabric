@@ -35,7 +35,7 @@ public class MotionBlurMod implements ClientModInitializer {
 
     private static final ManagedShaderEffect motionblur = ShaderEffectManager.getInstance().manage(new Identifier(ID, "shaders/post/motion_blur.json"),
             shader -> shader.setUniformValue("BlendFactor", config.motionBlurStrength * 2));
-    private static Gson GSON = new GsonBuilder().setLenient().setPrettyPrinting().create();
+    private static final Gson GSON = new GsonBuilder().setLenient().setPrettyPrinting().create();
     private static KeyBinding toggleKeybinding;
     @Override
 
@@ -139,7 +139,7 @@ public class MotionBlurMod implements ClientModInitializer {
     private void saveConfig() {
         File configFile = FabricLoader.getInstance().getConfigDir().resolve("naturalmotionblur.json").toFile();
         try {
-            FileUtils.write(configFile, GSON.toJson(config));
+            FileUtils.write(configFile, GSON.toJson(config), StandardCharsets.UTF_8);
         } catch (IOException e) {
             throw new RuntimeException(e);
         }
