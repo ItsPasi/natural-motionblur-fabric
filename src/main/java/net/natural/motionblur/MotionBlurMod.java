@@ -107,6 +107,7 @@ public class MotionBlurMod implements ClientModInitializer {
                                 .setKeySaveConsumer(newValue -> {
                                     config.toggleKey = newValue.getCode();
                                     toggleKeybinding.setBoundKey(newValue);
+                                    KeyBinding.updateKeysByCode(); // Ensure the keybinding gets updated
                                 })
                                 .build());
                         builder.setSavingRunnable(this::saveConfig);
