@@ -30,17 +30,13 @@ public class MotionBlurMod implements ClientModInitializer {
 
     public static String ID = "naturalmotionblur";
     private float currentBlur;
-
     private static MotionBlurConfig config;
-
+    private static KeyBinding toggleKeybinding;
+    private static final Gson GSON = new GsonBuilder().setLenient().setPrettyPrinting().create();
     private static final ManagedShaderEffect motionblur = ShaderEffectManager.getInstance().manage(Identifier.of(ID, "shaders/post/motion_blur.json"),
             shader -> shader.setUniformValue("BlendFactor", config.motionBlurStrength * 2));
-    private static final Gson GSON = new GsonBuilder().setLenient().setPrettyPrinting().create();
-    private static KeyBinding toggleKeybinding;
+
     @Override
-
-
-
     public void onInitializeClient() {
         config = new MotionBlurConfig();
 
@@ -71,50 +67,52 @@ public class MotionBlurMod implements ClientModInitializer {
 
         ClientCommandRegistrationCallback.EVENT.register((dispatcher, registryAccess) -> {dispatcher.register(ClientCommandManager.literal("motionblur")
                 .executes(context -> {
-                        ConfigBuilder builder = ConfigBuilder.create()
-                                .setParentScreen(null)
-                                .setTitle(Text.literal("Natural Motion Blur"));
-                        ConfigCategory general = builder.getOrCreateCategory(Text.literal("Motion Blur Options"));
+                    ConfigBuilder builder = ConfigBuilder.create()
+                            .setParentScreen(null)
+                            .setTitle(Text.literal("Natural Motion Blur"));
+                    ConfigCategory general = builder.getOrCreateCategory(Text.literal("Motion Blur Options"));
 
-                        ConfigEntryBuilder entryBuilder = builder.entryBuilder();
+                    ConfigEntryBuilder entryBuilder = builder.entryBuilder();
 
-                        general.addEntry(entryBuilder.startBooleanToggle(Text.literal("Toggle Motion Blur"), config.enabled)
-                                .setDefaultValue(true)
-                                .setSaveConsumer(newValue -> config.enabled = newValue)
-                                .build());
+                    general.addEntry(entryBuilder.startBooleanToggle(Text.literal("Toggle Motion Blur"), config.enabled)
+                            .setDefaultValue(true)
+                            .setSaveConsumer(newValue -> config.enabled = newValue)
+                            .build());
 
-                        general.addEntry(entryBuilder.startBooleanToggle(Text.literal("Third Person Rendering"), config.renderF5)
-                                .setDefaultValue(true)
-                                .setTooltip(Text.literal("Decide whether the motion blur should be rendered in third person (F5) or not."))
-                                .setSaveConsumer(newValue -> config.renderF5 = newValue)
-                                .build());
+                    general.addEntry(entryBuilder.startBooleanToggle(Text.literal("Third Person Rendering"), config.renderF5)
+                            .setDefaultValue(true)
+                            .setTooltip(Text.literal("Decide whether the motion blur should be rendered in third person (F5) or not."))
+                            .setSaveConsumer(newValue -> config.renderF5 = newValue)
+                            .build());
 
-                        general.addEntry(entryBuilder.startFloatField(Text.literal("Motion Blur Strength"), config.motionBlurStrength)
-                                .setDefaultValue(1.0F)
-                                .setTooltip(Text.literal("Sets the intensity of the blur. Default setting (1.0) blends frames ideally in correlation to framerate"))
-                                .setSaveConsumer(newValue -> config.motionBlurStrength = newValue)
-                                .build());
+                    general.addEntry(entryBuilder.startFloatField(Text.literal("Motion Blur Strength"), config.motionBlurStrength)
+                            .setDefaultValue(1.0F)
+                            .setTooltip(Text.literal("Sets the intensity of the blur. Default setting (1.0) blends frames ideally in correlation to framerate"))
+                            .setSaveConsumer(newValue -> config.motionBlurStrength = newValue)
+                            .build());
 
-                        general.addEntry(entryBuilder.startIntField(Text.literal("Motion Blur Sample Amount"), config.motionBlurSamples)
-                                .setDefaultValue(20)
-                                .setTooltip(Text.literal("Higher values improve visual appearance (especially at lower FPS) but impact performance negatively."))
-                                .setSaveConsumer(newValue -> config.motionBlurSamples = newValue)
-                                .build());
+                    general.addEntry(entryBuilder.startIntField(Text.literal("Motion Blur Sample Amount"), config.motionBlurSamples)
+                            .setDefaultValue(20)
+                            .setTooltip(Text.literal("Higher values improve visual appearance (especially at lower FPS) but impact performance negatively."))
+                            .setSaveConsumer(newValue -> config.motionBlurSamples = newValue)
+                            .build());
 
 
-                        general.addEntry(entryBuilder.startKeyCodeField(Text.literal("Toggle Key"), InputUtil.fromKeyCode(config.toggleKey, 0))
-                                .setDefaultValue(ModifierKeyCode.of(InputUtil.fromTranslationKey("key.keyboard.v"), Modifier.none()))
-                                .setKeySaveConsumer(newValue -> {
-                                    config.toggleKey = newValue.getCode();
-                                    toggleKeybinding.setBoundKey(newValue);
-                                })
-                                .build());
-                        builder.setSavingRunnable(this::saveConfig);
-                        MinecraftClient.getInstance().send(() ->
-                                MinecraftClient.getInstance().setScreen(builder.build())
-                        );
-                        return 1;
-                    }));
+                    general.addEntry(entryBuilder.startKeyCodeField(Text.literal("Toggle Key"), InputUtil.fromKeyCode(config.toggleKey, 0))
+                            .setDefaultValue(ModifierKeyCode.of(InputUtil.fromTranslationKey("key.keyboard.v"), Modifier.none()))
+                            .setKeySaveConsumer(newValue -> {
+                                config.toggleKey = newValue.getCode();
+                                toggleKeybinding.setBoundKey(newValue);
+                                KeyBinding.updateKeysByCode();
+                                MinecraftClient.getInstance().options.write();
+                            })
+                            .build());
+                    builder.setSavingRunnable(this::saveConfig);
+                    MinecraftClient.getInstance().send(() ->
+                            MinecraftClient.getInstance().setScreen(builder.build())
+                    );
+                    return 1;
+                }));
             dispatcher.register(ClientCommandManager.literal("mb").executes(context -> {
                 return dispatcher.execute("motionblur", context.getSource());
             }));
