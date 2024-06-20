@@ -107,7 +107,8 @@ public class MotionBlurMod implements ClientModInitializer {
                                 .setKeySaveConsumer(newValue -> {
                                     config.toggleKey = newValue.getCode();
                                     toggleKeybinding.setBoundKey(newValue);
-                                    KeyBinding.updateKeysByCode(); // Ensure the keybinding gets updated
+                                    KeyBinding.updateKeysByCode();
+                                    MinecraftClient.getInstance().options.write();
                                 })
                                 .build());
                         builder.setSavingRunnable(this::saveConfig);
