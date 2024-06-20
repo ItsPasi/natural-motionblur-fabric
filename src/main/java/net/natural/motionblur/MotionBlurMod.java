@@ -30,17 +30,13 @@ public class MotionBlurMod implements ClientModInitializer {
 
     public static String ID = "naturalmotionblur";
     private float currentBlur;
-
     private static MotionBlurConfig config;
-
+    private static KeyBinding toggleKeybinding;
+    private static final Gson GSON = new GsonBuilder().setLenient().setPrettyPrinting().create();
     private static final ManagedShaderEffect motionblur = ShaderEffectManager.getInstance().manage(new Identifier(ID, "shaders/post/motion_blur.json"),
             shader -> shader.setUniformValue("BlendFactor", config.motionBlurStrength * 2));
-    private static final Gson GSON = new GsonBuilder().setLenient().setPrettyPrinting().create();
-    private static KeyBinding toggleKeybinding;
+
     @Override
-
-
-
     public void onInitializeClient() {
         config = new MotionBlurConfig();
 
