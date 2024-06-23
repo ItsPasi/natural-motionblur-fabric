@@ -9,7 +9,6 @@
     "attributes": [ "Position" ],
     "samplers": [
         { "name": "DiffuseSampler" },
-        { "name": "TranslucentDepthSampler" },
         { "name": "DiffuseDepthSampler" }
     ],
     "uniforms": [
