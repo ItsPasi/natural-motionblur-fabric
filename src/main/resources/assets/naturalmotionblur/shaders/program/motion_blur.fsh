@@ -70,7 +70,7 @@ void main() {
 
     for (int i = 0; i < motionBlurSamples; ++i) {
         if (blurAlgorithm == 0) {
-            vec2 pos = texCoord + float(i) * 2 * increment;
+            vec2 pos = float(i) * 2 * increment;
             ivec2 tap = ivec2(pos * view_res);
             vec3 color = texelFetch(DiffuseSampler, tap, 0).rgb;
             float weight = (clamp01(pos) == pos) ? 1.0 : 0.0;
@@ -92,5 +92,9 @@ void main() {
             weight_sum += weight_forward + weight_backward;
         }
     }
-    color = vec4(pow(color_sum * rcp(weight_sum), sqrtExponent), 1.0);
+    if (weight_sum > 0.0) {
+        color = vec4(pow(color_sum * rcp(weight_sum), sqrtExponent), 1.0);
+    } else {
+        color = vec4(texelFetch(DiffuseSampler, texel, 0).rgb, 1.0);
+    }
 }
