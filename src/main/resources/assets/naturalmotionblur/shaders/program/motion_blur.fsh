@@ -92,5 +92,9 @@ void main() {
             weight_sum += weight_forward + weight_backward;
         }
     }
-    color = vec4(pow(color_sum * rcp(weight_sum), sqrtExponent), 1.0);
+    if (weight_sum > 0.0) {
+        color = vec4(pow(color_sum * rcp(weight_sum), sqrtExponent), 1.0);
+    } else {
+        color = vec4(texelFetch(DiffuseSampler, texel, 0).rgb, 1.0);
+    }
 }
