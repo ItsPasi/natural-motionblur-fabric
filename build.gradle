@@ -1,5 +1,5 @@
 plugins {
-	id 'fabric-loom' version '1.6-SNAPSHOT'
+	id 'fabric-loom' version '1.7-SNAPSHOT'
 	id 'io.github.juuxel.loom-quiltflower' version '1.7.2'
 }
 
@@ -44,6 +44,9 @@ repositories {
 	flatDir {
 		dirs 'libs'
 	}
+	maven {
+		url = 'https://maven.irisshaders.net/'
+	}
 }
 
 dependencies {
@@ -51,6 +54,8 @@ dependencies {
 	minecraft "com.mojang:minecraft:${project.minecraft_version}"
 	mappings "net.fabricmc:yarn:${project.yarn_mappings}:v2"
 	modImplementation "net.fabricmc:fabric-loader:${project.loader_version}"
+
+	modCompileOnly "maven.modrinth:iris:1.6.4+1.19.4"
 
 	modIncludeImplementation "io.github.ladysnake:satin:${satin_version}"
 	modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"

@@ -127,6 +127,9 @@ public class MotionBlurMod implements ClientModInitializer {
 
         PostWorldRenderCallbackV2.EVENT.register((matrix, camera, deltaTick, a) -> {
             if (config.motionBlurStrength != 0 && config.enabled) {
+                if (!IrisCheck.checkIrisShouldDisable()) {
+                    return;
+                }
                 if (currentBlur != config.motionBlurStrength) {
                     motionblur.setUniformValue("BlendFactor", config.motionBlurStrength);
                     currentBlur = config.motionBlurStrength;
