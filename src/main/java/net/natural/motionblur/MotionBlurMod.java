@@ -127,7 +127,6 @@ public class MotionBlurMod implements ClientModInitializer {
 
         PostWorldRenderCallbackV2.EVENT.register((matrix, camera, deltaTick, a) -> {
             if (config.motionBlurStrength != 0 && config.enabled) {
-                // Disable motion blur if Iris shaders are enabled
                 if (!IrisCheck.checkIrisShouldDisable()) {
                     return;
                 }
