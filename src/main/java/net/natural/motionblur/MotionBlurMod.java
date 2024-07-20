@@ -85,7 +85,7 @@ public class MotionBlurMod implements ClientModInitializer {
                         general.addEntry(entryBuilder.startFloatField(Text.literal("Motion Blur Strength"), config.motionBlurStrength)
                                 .setDefaultValue(1.0F)
                                 .setTooltip(Text.literal("Sets the intensity of the blur. \n" +
-                                                                "Default setting (1.0) blends frames ideally in correlation to framerate."))
+                                        "Default setting (1.0) blends frames ideally in correlation to framerate."))
                                 .setSaveConsumer(newValue -> config.motionBlurStrength = newValue)
                                 .build());
 
@@ -101,8 +101,8 @@ public class MotionBlurMod implements ClientModInitializer {
                                         config.blurAlgorithm)
                                 .setDefaultValue(BlurAlgorithm.CENTERED)
                                 .setTooltip(Text.literal("Changes the blur to either only blend frames backwards or in both directions. \n\n" +
-                                                               "BACKWARDS has better blur continuity (better frame blending). \n" +
-                                                               "CENTERED has better visual uniformity (e.g. translucent objects) and less perceived input lag."))
+                                        "BACKWARDS has better blur continuity (better frame blending). \n" +
+                                        "CENTERED has better visual uniformity (e.g. translucent objects) and less perceived input lag."))
                                 .setSaveConsumer(newValue -> config.blurAlgorithm = newValue)
                                 .build());
 
@@ -127,6 +127,10 @@ public class MotionBlurMod implements ClientModInitializer {
 
         PostWorldRenderCallbackV2.EVENT.register((matrix, camera, deltaTick, a) -> {
             if (config.motionBlurStrength != 0 && config.enabled) {
+                // Disable motion blur if Iris shaders are enabled
+                if (!IrisCheck.checkIrisShouldDisable()) {
+                    return;
+                }
                 if (currentBlur != config.motionBlurStrength) {
                     motionblur.setUniformValue("BlendFactor", config.motionBlurStrength);
                     currentBlur = config.motionBlurStrength;
