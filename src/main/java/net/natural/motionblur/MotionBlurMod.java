@@ -1,5 +1,6 @@
 package net.natural.motionblur;
 
+import com.mojang.brigadier.arguments.FloatArgumentType;
 import net.natural.motionblur.config.MotionBlurConfig;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
@@ -35,7 +36,7 @@ public class MotionBlurMod implements ClientModInitializer {
     private static KeyBinding toggleKeybinding;
     private static final Gson GSON = new GsonBuilder().setLenient().setPrettyPrinting().create();
     private static final ManagedShaderEffect motionblur = ShaderEffectManager.getInstance().manage(
-            new Identifier(ID, "shaders/post/motion_blur.json"),
+            Identifier.of(ID, "shaders/post/motion_blur.json"),
             shader -> shader.setUniformValue("BlendFactor", config.motionBlurStrength)
     );
     public enum BlurAlgorithm {BACKWARDS, CENTERED}
@@ -85,7 +86,7 @@ public class MotionBlurMod implements ClientModInitializer {
                         general.addEntry(entryBuilder.startFloatField(Text.literal("Motion Blur Strength"), config.motionBlurStrength)
                                 .setDefaultValue(1.0F)
                                 .setTooltip(Text.literal("Sets the intensity of the blur. \n" +
-                                                                "Default setting (1.0) blends frames ideally in correlation to framerate."))
+                                        "Default setting (1.0) blends frames ideally in correlation to framerate."))
                                 .setSaveConsumer(newValue -> config.motionBlurStrength = newValue)
                                 .build());
 
@@ -101,8 +102,8 @@ public class MotionBlurMod implements ClientModInitializer {
                                         config.blurAlgorithm)
                                 .setDefaultValue(BlurAlgorithm.CENTERED)
                                 .setTooltip(Text.literal("Changes the blur to either only blend frames backwards or in both directions. \n\n" +
-                                                               "BACKWARDS has better blur continuity (better frame blending). \n" +
-                                                               "CENTERED has better visual uniformity (e.g. translucent objects) and less perceived input lag."))
+                                        "BACKWARDS has better blur continuity (better frame blending). \n" +
+                                        "CENTERED has better visual uniformity (e.g. translucent objects) and less perceived input lag."))
                                 .setSaveConsumer(newValue -> config.blurAlgorithm = newValue)
                                 .build());
 
@@ -123,6 +124,14 @@ public class MotionBlurMod implements ClientModInitializer {
             dispatcher.register(ClientCommandManager.literal("mb").executes(context -> {
                 return dispatcher.execute("motionblur", context.getSource());
             }));
+            dispatcher.register(ClientCommandManager.literal("mb")
+                    .then(ClientCommandManager.argument("strength", FloatArgumentType.floatArg())
+                            .executes(context -> setMotionBlurStrength(FloatArgumentType.getFloat(context, "strength"))))
+            );
+            dispatcher.register(ClientCommandManager.literal("motionblur")
+                    .then(ClientCommandManager.argument("strength", FloatArgumentType.floatArg())
+                            .executes(context -> setMotionBlurStrength(FloatArgumentType.getFloat(context, "strength"))))
+            );
         });
 
         PostWorldRenderCallbackV2.EVENT.register((matrix, camera, deltaTick, a) -> {
@@ -162,7 +171,14 @@ public class MotionBlurMod implements ClientModInitializer {
             }
         });
     }
-
+    private int setMotionBlurStrength(float strength) {
+        config.motionBlurStrength = strength;
+        saveConfig();
+        motionblur.setUniformValue("BlendFactor", strength);
+        assert MinecraftClient.getInstance().player != null;
+        MinecraftClient.getInstance().player.sendMessage(Text.literal("Motion Blur Strength set to " + strength), false);
+        return 1;
+    }
     private void loadConfig() {
         File configFile = FabricLoader.getInstance().getConfigDir().resolve("naturalmotionblur.json").toFile();
         if (!configFile.exists()) {

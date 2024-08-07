@@ -2,6 +2,7 @@
 
 uniform sampler2D DiffuseSampler;
 uniform sampler2D DiffuseDepthSampler;
+uniform float BlendFactor;
 uniform vec2 view_res;
 uniform mat4 mvInverse;
 uniform mat4 projInverse;
@@ -11,10 +12,9 @@ uniform mat4 projection;
 uniform vec3 cameraPos;
 uniform vec3 prevCameraPos;
 uniform int motionBlurSamples;
+int halfMotionBlurSamples = motionBlurSamples / 2;
 uniform int blurAlgorithm;
 in vec2 texCoord;
-
-uniform float BlendFactor = 0.75;
 layout(location = 0) out vec4 color;
 
 #define clamp01(x) clamp(x, 0.0, 1.0)
@@ -59,27 +59,28 @@ void main() {
     ivec2 texel = ivec2(gl_FragCoord.xy);
 
     float depth = texelFetch(DiffuseDepthSampler, texel, 0).x;
+    depth = clamp(depth, 0.002, 0.998);
     vec2 velocity = texCoord - reproject(vec3(texCoord, depth)).xy;
     vec2 increment = (0.5 * BlendFactor / float(motionBlurSamples)) * velocity;
+    vec2 halfIncrement = (0.5 * BlendFactor / float(halfMotionBlurSamples)) * velocity;
 
     vec3 color_sum = vec3(0.0);
     float weight_sum = 0.0;
 
-    vec3 powerExponent = vec3(1.8);
-    vec3 sqrtExponent = vec3(0.5556);
-
-    for (int i = 0; i < motionBlurSamples; ++i) {
-        if (blurAlgorithm == 0) {
+    if (blurAlgorithm == 0) {
+        for (int i = 0; i < motionBlurSamples; ++i) {
             vec2 pos = texCoord + float(i) * 2 * increment;
             ivec2 tap = ivec2(pos * view_res);
             vec3 color = texelFetch(DiffuseSampler, tap, 0).rgb;
             float weight = (clamp01(pos) == pos) ? 1.0 : 0.0;
 
-            color_sum += pow(color, powerExponent) * weight;
+            color_sum += color * color * weight;
             weight_sum += weight;
-        } else {
-            vec2 pos_forward = texCoord + 0.5 * increment + float(i) * increment;
-            vec2 pos_backward = texCoord - 0.5 * increment - float(i) * increment;
+        }
+    } else {
+        for (int i = 0; i < halfMotionBlurSamples; ++i) {
+            vec2 pos_forward = texCoord + 0.5 * halfIncrement + float(i) * halfIncrement;
+            vec2 pos_backward = texCoord - 0.5 * halfIncrement - float(i) * halfIncrement;
             ivec2 tap_forward = ivec2(pos_forward * view_res);
             ivec2 tap_backward = ivec2(pos_backward * view_res);
             vec3 color_forward = texelFetch(DiffuseSampler, tap_forward, 0).rgb;
@@ -87,13 +88,12 @@ void main() {
             float weight_forward = (clamp01(pos_forward) == pos_forward) ? 1.0 : 0.0;
             float weight_backward = (clamp01(pos_backward) == pos_backward) ? 1.0 : 0.0;
 
-            color_sum += pow(color_forward, powerExponent) * weight_forward
-                       + pow(color_backward, powerExponent) * weight_backward;
+            color_sum += color_forward * color_forward * weight_forward + color_backward * color_backward * weight_backward;
             weight_sum += weight_forward + weight_backward;
         }
     }
     if (weight_sum > 0.0) {
-        color = vec4(pow(color_sum * rcp(weight_sum), sqrtExponent), 1.0);
+        color = vec4(sqrt(color_sum * rcp(weight_sum)), 1.0);
     } else {
         color = vec4(texelFetch(DiffuseSampler, texel, 0).rgb, 1.0);
     }
