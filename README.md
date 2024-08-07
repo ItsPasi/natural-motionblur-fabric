@@ -8,7 +8,7 @@ This motion blur mod aims to closely mimic human vision motion blur by blending 
 It is highly recommended to use the default strength value together with a framerate limit that matches your monitor's refresh rate. Best results are achieved by using V-sync.
 
 The config GUI can be accessed via these commands: ```/motionblur``` ```/mb``` <br/>
-You can also do ```/motionblur <strength>```or```/mb <strength>``` to set the strength of the blur directly.
+You can also do ```/motionblur <strength>``` or ```/mb <strength>``` to set the strength of the blur directly.
 
 This mod is **not** compatible with Iris shaders.
 <br/><br/><br/><br/>
