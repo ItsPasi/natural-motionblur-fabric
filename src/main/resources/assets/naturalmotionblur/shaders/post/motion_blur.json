@@ -1,11 +1,11 @@
-{ 
+{
     "targets": [
         "swap"
-    ], 
+    ],
     "passes": [
         {
             "name": "naturalmotionblur:motion_blur",
-            "intarget": "minecraft:main", 
+            "intarget": "minecraft:main",
             "outtarget": "swap",
             "auxtargets": [
               {
@@ -13,17 +13,17 @@
                 "id": "minecraft:main:depth"
               }
             ],
-            "uniforms": [ 
-                { 
-                   "name": "BlendFactor", 
+            "uniforms": [
+                {
+                   "name": "BlendFactor",
                     "values": [ 0.5 ]
-                } 
-            ] 
+                }
+            ]
         },
-        { 
-            "name": "blit", 
+        {
+            "name": "blit",
             "intarget": "swap",
-            "outtarget": "minecraft:main" 
-        } 
-    ] 
+            "outtarget": "minecraft:main"
+        }
+    ]
 }

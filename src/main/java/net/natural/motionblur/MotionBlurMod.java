@@ -22,6 +22,7 @@ import net.minecraft.util.Identifier;
 import org.apache.commons.io.FileUtils;
 import org.joml.Matrix4f;
 import org.joml.Vector3f;
+import com.mojang.brigadier.arguments.FloatArgumentType;
 
 import java.io.File;
 import java.io.IOException;
@@ -123,6 +124,14 @@ public class MotionBlurMod implements ClientModInitializer {
             dispatcher.register(ClientCommandManager.literal("mb").executes(context -> {
                 return dispatcher.execute("motionblur", context.getSource());
             }));
+            dispatcher.register(ClientCommandManager.literal("mb")
+                    .then(ClientCommandManager.argument("strength", FloatArgumentType.floatArg())
+                            .executes(context -> setMotionBlurStrength(FloatArgumentType.getFloat(context, "strength"))))
+            );
+            dispatcher.register(ClientCommandManager.literal("motionblur")
+                    .then(ClientCommandManager.argument("strength", FloatArgumentType.floatArg())
+                            .executes(context -> setMotionBlurStrength(FloatArgumentType.getFloat(context, "strength"))))
+            );
         });
 
         PostWorldRenderCallbackV2.EVENT.register((matrix, camera, deltaTick, a) -> {
@@ -162,7 +171,14 @@ public class MotionBlurMod implements ClientModInitializer {
             }
         });
     }
-
+    private int setMotionBlurStrength(float strength) {
+        config.motionBlurStrength = strength;
+        saveConfig();
+        motionblur.setUniformValue("BlendFactor", strength);
+        assert MinecraftClient.getInstance().player != null;
+        MinecraftClient.getInstance().player.sendMessage(Text.literal("Motion Blur Strength set to " + strength), false);
+        return 1;
+    }
     private void loadConfig() {
         File configFile = FabricLoader.getInstance().getConfigDir().resolve("naturalmotionblur.json").toFile();
         if (!configFile.exists()) {
