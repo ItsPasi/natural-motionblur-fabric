@@ -1,5 +1,6 @@
 package net.natural.motionblur;
 
+import com.mojang.brigadier.arguments.FloatArgumentType;
 import net.natural.motionblur.config.MotionBlurConfig;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
@@ -22,7 +23,6 @@ import net.minecraft.util.Identifier;
 import org.apache.commons.io.FileUtils;
 import org.joml.Matrix4f;
 import org.joml.Vector3f;
-import com.mojang.brigadier.arguments.FloatArgumentType;
 
 import java.io.File;
 import java.io.IOException;
@@ -36,7 +36,7 @@ public class MotionBlurMod implements ClientModInitializer {
     private static KeyBinding toggleKeybinding;
     private static final Gson GSON = new GsonBuilder().setLenient().setPrettyPrinting().create();
     private static final ManagedShaderEffect motionblur = ShaderEffectManager.getInstance().manage(
-            new Identifier(ID, "shaders/post/motion_blur.json"),
+            Identifier.of(ID, "shaders/post/motion_blur.json"),
             shader -> shader.setUniformValue("BlendFactor", config.motionBlurStrength)
     );
     public enum BlurAlgorithm {BACKWARDS, CENTERED}
