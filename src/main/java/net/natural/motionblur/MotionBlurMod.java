@@ -121,9 +121,8 @@ public class MotionBlurMod implements ClientModInitializer {
                         );
                         return 1;
                     }));
-            dispatcher.register(ClientCommandManager.literal("mb").executes(context -> {
-                return dispatcher.execute("motionblur", context.getSource());
-            }));
+            dispatcher.register(ClientCommandManager.literal("mb").executes(context ->
+                    dispatcher.execute("motionblur", context.getSource())));
             dispatcher.register(ClientCommandManager.literal("mb")
                     .then(ClientCommandManager.argument("strength", FloatArgumentType.floatArg())
                             .executes(context -> setMotionBlurStrength(FloatArgumentType.getFloat(context, "strength"))))
