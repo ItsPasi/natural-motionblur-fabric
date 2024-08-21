@@ -1,8 +1,7 @@
 package net.natural.motionblur.config;
 
-
+import net.minecraft.client.util.InputUtil;
 import net.natural.motionblur.MotionBlurMod;
-import org.lwjgl.glfw.GLFW;
 
 public class MotionBlurConfig {
 
@@ -11,6 +10,11 @@ public class MotionBlurConfig {
     public MotionBlurMod.BlurAlgorithm blurAlgorithm = MotionBlurMod.BlurAlgorithm.CENTERED;
     public boolean renderF5 = true;
     public boolean enabled = true;
-    public int toggleKey = GLFW.GLFW_KEY_V;
-
+    public String toggleKey = "key.keyboard.v";
+    public InputUtil.Key getToggleKey() {
+        return InputUtil.fromTranslationKey(toggleKey);
+    }
+    public void setToggleKey(InputUtil.Key key) {
+        this.toggleKey = key.getTranslationKey();
+    }
 }

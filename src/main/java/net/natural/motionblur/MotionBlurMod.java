@@ -1,5 +1,6 @@
 package net.natural.motionblur;
 
+import com.google.gson.JsonObject;
 import com.mojang.brigadier.arguments.FloatArgumentType;
 import net.natural.motionblur.config.MotionBlurConfig;
 import com.google.gson.Gson;
@@ -12,7 +13,6 @@ import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.command.v2.ClientCommandManager;
 import net.fabricmc.fabric.api.client.command.v2.ClientCommandRegistrationCallback;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
-import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.MinecraftClient;
@@ -27,6 +27,8 @@ import org.joml.Vector3f;
 import java.io.File;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.List;
 
 public class MotionBlurMod implements ClientModInitializer {
 
@@ -40,7 +42,6 @@ public class MotionBlurMod implements ClientModInitializer {
             shader -> shader.setUniformValue("BlendFactor", config.motionBlurStrength)
     );
     public enum BlurAlgorithm {BACKWARDS, CENTERED}
-    private static ClientTickEvents.EndTick endTickListener;
     private static boolean configReset = false;
     private static boolean delayMessageSent = false;
     private static int tickCounter = 0;
@@ -50,11 +51,10 @@ public class MotionBlurMod implements ClientModInitializer {
     public void onInitializeClient() {
         loadConfig();
 
-        toggleKeybinding = KeyBindingHelper.registerKeyBinding(new KeyBinding(
-                "Toggle Motion Blur",
-                InputUtil.Type.KEYSYM,
-                config.toggleKey,
-                KeyBinding.MISC_CATEGORY));
+        toggleKeybinding = new KeyBinding(
+                Text.literal("Toggle Motion Blur").getString(),
+                config.getToggleKey().getCode(),
+                KeyBinding.MISC_CATEGORY);
 
         ClientTickEvents.START_CLIENT_TICK.register(client -> {
             if(toggleKeybinding.wasPressed()){
@@ -107,11 +107,11 @@ public class MotionBlurMod implements ClientModInitializer {
                                 .setSaveConsumer(newValue -> config.blurAlgorithm = newValue)
                                 .build());
 
-                        general.addEntry(entryBuilder.startKeyCodeField(Text.literal("Toggle Key"), InputUtil.fromKeyCode(config.toggleKey, 0))
+                        general.addEntry(entryBuilder.startKeyCodeField(Text.literal("Toggle Key"), config.getToggleKey())
                                 .setDefaultValue(ModifierKeyCode.of(InputUtil.fromTranslationKey("key.keyboard.v"), Modifier.none()))
                                 .setKeySaveConsumer(newValue -> {
-                                    config.toggleKey = newValue.getCode();
-                                    MinecraftClient.getInstance().options.setKeyCode(toggleKeybinding, newValue);
+                                    config.setToggleKey(newValue);
+                                    toggleKeybinding.setBoundKey(newValue);
                                     KeyBinding.updateKeysByCode();
                                 })
                                 .build());
@@ -157,17 +157,19 @@ public class MotionBlurMod implements ClientModInitializer {
             if (configReset) {
                 tickCounter = 0;
                 delayMessageSent = false;
-                endTickListener = tickClient -> {
+                ClientTickEvents.END_CLIENT_TICK.register(tickClient -> {
                     if (tickCounter >= TICK_DELAY && !delayMessageSent) {
                         if (client.player != null) {
-                            client.player.sendMessage(Text.literal("§cNatural Motion Blur has encountered an issue and has been reset to its default settings."), false);
-                            delayMessageSent = true; // Mark message as sent
+                            for (String errorMessage : errorMessages) {
+                                client.player.sendMessage(Text.literal("§c" + errorMessage), false);
+                            }
+                            delayMessageSent = true;
+                            errorMessages.clear();
                         }
                     } else {
                         tickCounter++;
                     }
-                };
-                ClientTickEvents.END_CLIENT_TICK.register(endTickListener);
+                });
             }
         });
     }
@@ -179,17 +181,98 @@ public class MotionBlurMod implements ClientModInitializer {
         MinecraftClient.getInstance().player.sendMessage(Text.literal("Motion Blur Strength set to " + strength), false);
         return 1;
     }
+    private final List<String> errorMessages = new ArrayList<>();
     private void loadConfig() {
         File configFile = FabricLoader.getInstance().getConfigDir().resolve("naturalmotionblur.json").toFile();
+        boolean configModified = false;
+        errorMessages.clear();
+
         if (!configFile.exists()) {
             config = new MotionBlurConfig();
             saveConfig();
         } else {
             try {
-                config = GSON.fromJson(FileUtils.readFileToString(configFile, StandardCharsets.UTF_8), MotionBlurConfig.class);
-                config.blurAlgorithm = BlurAlgorithm.values()[config.blurAlgorithm.ordinal()];
+                JsonObject configJson = GSON.fromJson(FileUtils.readFileToString(configFile, StandardCharsets.UTF_8), JsonObject.class);
+                config = new MotionBlurConfig();
+                if (configJson.has("motionBlurStrength")) {
+                    try {
+                        config.motionBlurStrength = configJson.get("motionBlurStrength").getAsFloat();
+                    } catch (Exception e) {
+                        config.motionBlurStrength = 1.0f;
+                        errorMessages.add("Strength value of mod \"Natural Motion Blur\" was invalid and has been reset to default (1.0).");
+                        configModified = true;
+                    }
+                }
+                if (configJson.has("motionBlurSamples")) {
+                    try {
+                        config.motionBlurSamples = configJson.get("motionBlurSamples").getAsInt();
+                    } catch (Exception e) {
+                        config.motionBlurSamples = 20;
+                        errorMessages.add("Sample amount of mod \"Natural Motion Blur\" was invalid and has been reset to default (20).");
+                        configModified = true;
+                    }
+                }
+                if (configJson.has("blurAlgorithm")) {
+                    try {
+                        config.blurAlgorithm = BlurAlgorithm.valueOf(configJson.get("blurAlgorithm").getAsString().toUpperCase());
+                    } catch (Exception e) {
+                        config.blurAlgorithm = BlurAlgorithm.CENTERED;
+                        errorMessages.add("Blur algorithm of mod \"Natural Motion Blur\" was invalid and has been reset to default (CENTERED).");
+                        configModified = true;
+                    }
+                }
+                if (configJson.has("toggleKey")) {
+                    try {
+                        String key = configJson.get("toggleKey").getAsString();
+                        InputUtil.Key parsedKey = InputUtil.fromTranslationKey(key);
+
+                        if (parsedKey == null || key.trim().isEmpty()) {
+                            throw new IllegalArgumentException("Invalid toggleKey.");
+                        }
+                        config.setToggleKey(parsedKey);
+                    } catch (Exception e) {
+                        config.setToggleKey(InputUtil.fromTranslationKey("key.keyboard.v"));
+                        errorMessages.add("Toggle key of mod \"Natural Motion Blur\" was invalid and has been reset to default (V).");
+                        configModified = true;
+                    }
+                }
+                if (configJson.has("renderF5")) {
+                    try {
+                        String renderF5Value = configJson.get("renderF5").getAsString();
+                        if ("true".equalsIgnoreCase(renderF5Value) || "false".equalsIgnoreCase(renderF5Value)) {
+                            config.renderF5 = Boolean.parseBoolean(renderF5Value);
+                        } else {
+                            throw new IllegalArgumentException("Invalid renderF5 value.");
+                        }
+                    } catch (Exception e) {
+                        config.renderF5 = true;
+                        errorMessages.add("Third person rendering option of mod \"Natural Motion Blur\" was invalid and has been reset to default (enabled).");
+                        configModified = true;
+                    }
+                }
+                if (configJson.has("enabled")) {
+                    try {
+                        String enabledValue = configJson.get("enabled").getAsString();
+                        if ("true".equalsIgnoreCase(enabledValue) || "false".equalsIgnoreCase(enabledValue)) {
+                            config.enabled = Boolean.parseBoolean(enabledValue);
+                        } else {
+                            throw new IllegalArgumentException("Invalid enabled value.");
+                        }
+                    } catch (Exception e) {
+                        config.enabled = true;
+                        errorMessages.add("Toggle option of mod \"Natural Motion Blur\" was invalid and has been reset to default (enabled).");
+                        configModified = true;
+                    }
+                }
             } catch (Exception e) {
                 config = new MotionBlurConfig();
+                saveConfig();
+                configReset = true;
+                errorMessages.add("Config file of mod \"Natural Motion Blur\" could not be loaded correctly and has been reset to default.");
+                return;
+            }
+
+            if (configModified) {
                 saveConfig();
                 configReset = true;
             }
@@ -204,7 +287,6 @@ public class MotionBlurMod implements ClientModInitializer {
             throw new RuntimeException(e);
         }
     }
-
     public static void setFrameMotionBlur(Matrix4f modelView, Matrix4f prevModelView, Matrix4f projection, Matrix4f prevProjection, Vector3f cameraPos, Vector3f prevCameraPos) {
         motionblur.setUniformValue("modelView", new Matrix4f(modelView));
         motionblur.setUniformValue("prevModelView", new Matrix4f(prevModelView));
