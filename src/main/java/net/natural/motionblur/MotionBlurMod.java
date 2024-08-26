@@ -85,6 +85,8 @@ public class MotionBlurMod implements ClientModInitializer {
 
                         general.addEntry(entryBuilder.startFloatField(Text.literal("Motion Blur Strength"), config.motionBlurStrength)
                                 .setDefaultValue(1.0F)
+                                .setMin(-1000)
+                                .setMax(1000)
                                 .setTooltip(Text.literal("Sets the intensity of the blur. \n" +
                                         "Default setting (1.0) blends frames ideally in correlation to framerate."))
                                 .setSaveConsumer(newValue -> config.motionBlurStrength = newValue)
@@ -92,6 +94,8 @@ public class MotionBlurMod implements ClientModInitializer {
 
                         general.addEntry(entryBuilder.startIntField(Text.literal("Motion Blur Sample Amount"), config.motionBlurSamples)
                                 .setDefaultValue(20)
+                                .setMin(0)
+                                .setMax(1000)
                                 .setTooltip(Text.literal("Higher values improve visual appearance (especially at lower FPS) but impact performance negatively."))
                                 .setSaveConsumer(newValue -> config.motionBlurSamples = newValue)
                                 .build());
@@ -196,6 +200,11 @@ public class MotionBlurMod implements ClientModInitializer {
                 if (configJson.has("motionBlurStrength")) {
                     try {
                         config.motionBlurStrength = configJson.get("motionBlurStrength").getAsFloat();
+                        if (config.motionBlurStrength < -1000 || config.motionBlurStrength > 1000) {
+                            config.motionBlurStrength = 1.0f;
+                            errorMessages.add("Strength value of mod \"Natural Motion Blur\" was invalid and has been reset to default (1.0).");
+                            configModified = true;
+                        }
                     } catch (Exception e) {
                         config.motionBlurStrength = 1.0f;
                         errorMessages.add("Strength value of mod \"Natural Motion Blur\" was invalid and has been reset to default (1.0).");
@@ -205,6 +214,11 @@ public class MotionBlurMod implements ClientModInitializer {
                 if (configJson.has("motionBlurSamples")) {
                     try {
                         config.motionBlurSamples = configJson.get("motionBlurSamples").getAsInt();
+                        if (config.motionBlurSamples < 0 || config.motionBlurSamples > 1000) {
+                            config.motionBlurSamples = 20;
+                            errorMessages.add("Sample amount of mod \"Natural Motion Blur\" was invalid and has been reset to default (20).");
+                            configModified = true;
+                        }
                     } catch (Exception e) {
                         config.motionBlurSamples = 20;
                         errorMessages.add("Sample amount of mod \"Natural Motion Blur\" was invalid and has been reset to default (20).");
