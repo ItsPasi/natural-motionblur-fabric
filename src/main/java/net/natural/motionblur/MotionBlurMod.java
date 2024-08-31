@@ -177,6 +177,11 @@ public class MotionBlurMod implements ClientModInitializer {
         });
     }
     private int setMotionBlurStrength(float strength) {
+        if (strength < -1000 || strength > 1000) {
+            assert MinecraftClient.getInstance().player != null;
+            MinecraftClient.getInstance().player.sendMessage(Text.literal("§cInvalid motion blur strength! Value must be under 1000."), false);
+            return 0;
+        }
         config.motionBlurStrength = strength;
         saveConfig();
         motionblur.setUniformValue("BlendFactor", strength);
