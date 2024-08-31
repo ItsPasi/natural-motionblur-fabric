@@ -61,7 +61,6 @@ void main() {
     float depth = texelFetch(DiffuseDepthSampler, texel, 0).x;
     vec2 velocity = texCoord - reproject(vec3(texCoord, depth)).xy;
     vec2 increment = (0.5 * BlendFactor / float(motionBlurSamples)) * velocity;
-    vec2 halfIncrement = (0.5 * BlendFactor / float(halfMotionBlurSamples)) * velocity;
 
     vec3 color_sum = vec3(0.0);
     float weight_sum = 0.0;
