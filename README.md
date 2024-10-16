@@ -13,6 +13,7 @@ You can also do ```/motionblur <strength>``` or ```/mb <strength>``` to set the 
 This mod is **not** compatible with the following mods: 
 - Iris shaders
 - Palladium
+
 <br/><br/><br/><br/>
 Made with the help of IMS, What42Pizza and Romain H.
 
