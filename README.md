@@ -10,7 +10,9 @@ It is highly recommended to use the default strength value together with a frame
 The config GUI can be accessed via these commands: ```/motionblur``` ```/mb``` <br/>
 You can also do ```/motionblur <strength>``` or ```/mb <strength>``` to set the strength of the blur directly.
 
-This mod is **not** compatible with Iris shaders.
+This mod is **not** compatible with the following mods: 
+- Iris shaders
+- Palladium.
 <br/><br/><br/><br/>
 Made with the help of IMS, What42Pizza and Romain H.
 
