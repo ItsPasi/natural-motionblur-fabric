@@ -38,7 +38,7 @@ public class MotionBlurMod implements ClientModInitializer {
     private static KeyBinding toggleKeybinding;
     private static final Gson GSON = new GsonBuilder().setLenient().setPrettyPrinting().create();
     private static final ManagedShaderEffect motionblur = ShaderEffectManager.getInstance().manage(
-            Identifier.of(ID, "shaders/post/motion_blur.json"),
+            Identifier.of(ID, "motion_blur"),
             shader -> shader.setUniformValue("BlendFactor", config.motionBlurStrength)
     );
     public enum BlurAlgorithm {BACKWARDS, CENTERED}

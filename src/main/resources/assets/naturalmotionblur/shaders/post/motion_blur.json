@@ -1,29 +1,25 @@
-{ 
-    "targets": [
-        "swap"
-    ], 
-    "passes": [
-        {
-            "name": "naturalmotionblur:motion_blur",
-            "intarget": "minecraft:main", 
-            "outtarget": "swap",
-            "auxtargets": [
-              {
-                "name": "DiffuseDepthSampler",
-                "id": "minecraft:main:depth"
-              }
-            ],
-            "uniforms": [ 
-                { 
-                   "name": "BlendFactor", 
-                    "values": [ 0.5 ]
-                } 
-            ] 
-        },
-        { 
-            "name": "blit", 
-            "intarget": "swap",
-            "outtarget": "minecraft:main" 
-        } 
-    ] 
+{
+    "vertex": "minecraft:post/sobel",
+    "fragment": "naturalmotionblur:post/motion_blur",
+    "samplers": [
+        { "name": "MainSampler" },
+        { "name": "MainDepthSampler" }
+    ],
+    "uniforms": [
+        { "name": "mvInverse",  "type": "matrix4x4", "count": 16, "values": [ 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0 ] },
+        { "name": "projInverse",  "type": "matrix4x4", "count": 16, "values": [ 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0 ] },
+        { "name": "prevModelView",  "type": "matrix4x4", "count": 16, "values": [ 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0 ] },
+        { "name": "prevProjection",  "type": "matrix4x4", "count": 16, "values": [ 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0 ] },
+        { "name": "projection",  "type": "matrix4x4", "count": 16, "values": [ 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0 ] },
+        { "name": "InSize",   "type": "float",	 "count": 2,  "values": [ 1.0, 1.0 ] },
+        { "name": "OutSize",  "type": "float",	 "count": 2,  "values": [ 1.0, 1.0 ] },
+        { "name": "view_res",  "type": "float",	 "count": 2,  "values": [ 1.0, 1.0 ] },
+        { "name": "view_pixel_size",  "type": "float",	 "count": 2,  "values": [ 1.0, 1.0 ] },
+        { "name": "cameraPos",  "type": "float",	 "count": 3,  "values": [ 1.0, 1.0, 1.0 ] },
+        { "name": "prevCameraPos",  "type": "float",	 "count": 3,  "values": [ 1.0, 1.0, 1.0 ] },
+        { "name": "BlendFactor", "type": "float",	 "count": 1,  "values": [ 0.5 ] },
+        { "name": "ProjMat",  "type": "matrix4x4", "count": 16, "values": [ 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0 ] },
+        { "name": "motionBlurSamples", "type":  "int", "count":  1, "values": [20]},
+        { "name": "blurAlgorithm", "type":  "int", "count":  1, "values": [0]}
+    ]
 }

@@ -1,5 +1,5 @@
 plugins {
-	id 'fabric-loom' version '1.8-SNAPSHOT'
+	id 'fabric-loom' version '1.10-SNAPSHOT'
 	id 'io.github.juuxel.loom-quiltflower' version '1.7.2'
 }
 
@@ -55,7 +55,7 @@ dependencies {
 	mappings "net.fabricmc:yarn:${project.yarn_mappings}:v2"
 	modImplementation "net.fabricmc:fabric-loader:${project.loader_version}"
 
-	modCompileOnly "maven.modrinth:iris:1.6.4+1.20"
+	modCompileOnly "maven.modrinth:iris:1.8.8+1.21.4-fabric"
 
 	modIncludeImplementation "org.ladysnake:satin:${satin_version}"
 	modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
