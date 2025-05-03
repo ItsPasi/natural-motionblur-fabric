@@ -16,13 +16,7 @@
           "use_depth_buffer": true
         }
       ],
-      "output": "swap",
-      "uniforms": [
-        {
-          "name": "BlendFactor",
-          "values": [ 0.5 ]
-        }
-      ]
+      "output": "swap"
     },
     {
       "program": "minecraft:post/blit",
