@@ -1,7 +1,7 @@
 #version 330 core
 
-uniform sampler2D DiffuseSampler;
-uniform sampler2D DiffuseDepthSampler;
+uniform sampler2D MainSampler;
+uniform sampler2D MainDepthSampler;
 uniform float BlendFactor;
 uniform vec2 view_res;
 uniform mat4 mvInverse;
@@ -45,7 +45,7 @@ vec3 reproject(vec3 screen_pos) {
 void main() {
     ivec2 texel = ivec2(gl_FragCoord.xy);
 
-    float depth = texelFetch(DiffuseDepthSampler, texel, 0).x;
+    float depth = texelFetch(MainDepthSampler, texel, 0).x;
     vec2 velocity = texCoord - reproject(vec3(texCoord, depth)).xy;
     vec2 increment = (BlendFactor / float(motionBlurSamples)) * velocity;
 
@@ -56,7 +56,7 @@ void main() {
         for (int i = 0; i < motionBlurSamples; ++i) {
             vec2 pos = texCoord + float(i) * increment;
             ivec2 tap = ivec2(pos * view_res);
-            vec3 color = texelFetch(DiffuseSampler, tap, 0).rgb;
+            vec3 color = texelFetch(MainSampler, tap, 0).rgb;
             float weight = (clamp01(pos) == pos) ? 1.0 : 0.0;
 
             color_sum += color * color * weight;
@@ -66,7 +66,7 @@ void main() {
         for (int i = -halfMotionBlurSamples + 1; i <= halfMotionBlurSamples; ++i) {
             vec2 pos = texCoord + float(i) * increment;
             ivec2 tap = ivec2(pos * view_res);
-            vec3 color = texelFetch(DiffuseSampler, tap, 0).rgb;
+            vec3 color = texelFetch(MainSampler, tap, 0).rgb;
             float weight = (clamp01(pos) == pos) ? 1.0 : 0.0;
 
             color_sum += color * color * weight;
@@ -76,6 +76,6 @@ void main() {
     if (weight_sum > 0.0) {
         color = vec4(sqrt(color_sum * rcp(weight_sum)), 1.0);
     } else {
-        color = vec4(texelFetch(DiffuseSampler, texel, 0).rgb, 1.0);
+        color = vec4(texelFetch(MainSampler, texel, 0).rgb, 1.0);
     }
 }
