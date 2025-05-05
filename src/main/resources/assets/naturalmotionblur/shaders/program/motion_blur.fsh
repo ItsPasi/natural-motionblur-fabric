@@ -60,14 +60,14 @@ void main() {
 
     float depth = texelFetch(DiffuseDepthSampler, texel, 0).x;
     vec2 velocity = texCoord - reproject(vec3(texCoord, depth)).xy;
-    vec2 increment = (0.5 * BlendFactor / float(motionBlurSamples)) * velocity;
+    vec2 increment = (BlendFactor / float(motionBlurSamples)) * velocity;
 
     vec3 color_sum = vec3(0.0);
     float weight_sum = 0.0;
 
     if (blurAlgorithm == 0) {
         for (int i = 0; i < motionBlurSamples; ++i) {
-            vec2 pos = texCoord + float(i) * 2 * increment;
+            vec2 pos = texCoord + float(i) * increment;
             ivec2 tap = ivec2(pos * view_res);
             vec3 color = texelFetch(DiffuseSampler, tap, 0).rgb;
             float weight = (clamp01(pos) == pos) ? 1.0 : 0.0;
@@ -77,7 +77,7 @@ void main() {
         }
     } else {
         for (int i = -halfMotionBlurSamples + 1; i <= halfMotionBlurSamples; ++i) {
-            vec2 pos = texCoord + float(i) * 2 * increment;
+            vec2 pos = texCoord + float(i) * increment;
             ivec2 tap = ivec2(pos * view_res);
             vec3 color = texelFetch(DiffuseSampler, tap, 0).rgb;
             float weight = (clamp01(pos) == pos) ? 1.0 : 0.0;
