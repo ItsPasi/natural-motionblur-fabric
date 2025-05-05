@@ -12,13 +12,7 @@
                 "name": "DiffuseDepthSampler",
                 "id": "minecraft:main:depth"
               }
-            ],
-            "uniforms": [ 
-                { 
-                   "name": "BlendFactor", 
-                    "values": [ 0.5 ]
-                } 
-            ] 
+            ]
         },
         { 
             "name": "blit", 

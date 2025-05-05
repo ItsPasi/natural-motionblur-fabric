@@ -1,9 +1,4 @@
 {
-    "blend": {
-        "func": "add",
-        "srcrgb": "one",
-        "dstrgb": "zero"
-    },
     "vertex": "sobel",
     "fragment": "naturalmotionblur:motion_blur",
     "attributes": [ "Position" ],
