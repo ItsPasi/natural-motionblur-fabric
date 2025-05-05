@@ -29,12 +29,12 @@ The current version can be found on the [releases](https://github.com/ItsPasi/na
 - Sample amount
 
 ## Issues
-- Translucent objects do not blur correctly. (probably not fixable because of how vanilla shaders work)
+- Translucent objects do not blur correctly. (would need a different implementation to be fixed)
 - Riding entities causes too much blur. (don't know if fixable)
   
 ## Motionblur Examples
 
 ![Part 1](https://github.com/ItsPasi/natural-motionblur-fabric/blob/1.20.6-fabric/docs/blur%20example.png)
 
-https://github.com/ItsPasi/natural-motionblur-fabric/assets/12584747/2960d42d-2fac-4a04-818e-44b0d79e3fef
+https://github.com/user-attachments/assets/9e739b89-924b-4279-a644-d56c782e12cf
 
