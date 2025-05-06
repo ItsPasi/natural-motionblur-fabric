@@ -1,7 +1,6 @@
 package net.natural.motionblur;
 
 import com.google.gson.JsonObject;
-import com.mojang.blaze3d.systems.RenderSystem;
 import com.mojang.brigadier.arguments.FloatArgumentType;
 import net.fabricmc.fabric.api.client.rendering.v1.WorldRenderContext;
 import net.fabricmc.fabric.api.client.rendering.v1.WorldRenderEvents;
@@ -160,9 +159,7 @@ public class MotionBlurMod implements ClientModInitializer {
                     return;
                 }
 
-                RenderSystem.depthMask(false);
                 motionblur.render(deltaTick);
-                RenderSystem.depthMask(true);
             }
         });
 
