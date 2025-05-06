@@ -8,6 +8,7 @@ import net.fabricmc.fabric.api.client.rendering.v1.WorldRenderEvents;
 import net.natural.motionblur.config.MotionBlurConfig;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
+import org.ladysnake.satin.api.event.PostWorldRenderCallbackV2;
 import org.ladysnake.satin.api.managed.ManagedShaderEffect;
 import org.ladysnake.satin.api.managed.ShaderEffectManager;
 import me.shedaniel.clothconfig2.api.*;
@@ -43,12 +44,12 @@ public class MotionBlurMod implements ClientModInitializer {
             Identifier.of(ID, "motion_blur"),
             shader -> shader.setUniformValue("BlendFactor", config.motionBlurStrength)
     );
+    private static long lastNano;
     public enum BlurAlgorithm {BACKWARDS, CENTERED}
     private static boolean configReset = false;
     private static boolean delayMessageSent = false;
     private static int tickCounter = 0;
     private static final int TICK_DELAY = 80;
-    private static long lastNano;
 
     @Override
     public void onInitializeClient() {
@@ -141,7 +142,6 @@ public class MotionBlurMod implements ClientModInitializer {
         });
 
         WorldRenderEvents.END.register((WorldRenderContext ctx) -> {
-            // measure real time since last frame, convert to Minecraft ticks (1 tick = 1/20s)
             long now = System.nanoTime();
             float deltaTick = (now - lastNano) / 1_000_000_000.0f * 20.0f;
             lastNano = now;
@@ -149,33 +149,21 @@ public class MotionBlurMod implements ClientModInitializer {
             if (config.enabled && config.motionBlurStrength != 0) {
                 if (!IrisCheck.checkIrisShouldDisable()) return;
 
-                // update uniforms if they changed
                 if (currentBlur != config.motionBlurStrength) {
                     motionblur.setUniformValue("BlendFactor", config.motionBlurStrength);
                     currentBlur = config.motionBlurStrength;
                 }
-                motionblur.setUniformValue("view_res",
-                        (float) MinecraftClient.getInstance().getFramebuffer().viewportWidth,
-                        (float) MinecraftClient.getInstance().getFramebuffer().viewportHeight
-                );
-                motionblur.setUniformValue("view_pixel_size",
-                        1f / MinecraftClient.getInstance().getFramebuffer().viewportWidth,
-                        1f / MinecraftClient.getInstance().getFramebuffer().viewportHeight
-                );
+                motionblur.setUniformValue("view_res", (float) MinecraftClient.getInstance().getFramebuffer().viewportWidth, (float) MinecraftClient.getInstance().getFramebuffer().viewportHeight);
+                motionblur.setUniformValue("view_pixel_size", 1f / MinecraftClient.getInstance().getFramebuffer().viewportWidth, 1f / MinecraftClient.getInstance().getFramebuffer().viewportHeight);
                 motionblur.setUniformValue("motionBlurSamples", config.motionBlurSamples);
                 motionblur.setUniformValue("blurAlgorithm", config.blurAlgorithm.ordinal());
-
-                // only in first-person
                 if (!MinecraftClient.getInstance().options.getPerspective().isFirstPerson() && !config.renderF5) {
                     return;
                 }
 
-                // DRAW THE BLUR QUAD *after* translucent blocks (water, glass) but *before* your hand/items
-                RenderSystem.disableDepthTest();
-                RenderSystem.depthMask(false);   // don’t overwrite the depth buffer
+                RenderSystem.depthMask(false);
                 motionblur.render(deltaTick);
-                RenderSystem.depthMask(true);    // restore depth-writes
-                RenderSystem.enableDepthTest();
+                RenderSystem.depthMask(true);
             }
         });
 
