@@ -8,7 +8,6 @@ import net.fabricmc.fabric.api.client.rendering.v1.WorldRenderEvents;
 import net.natural.motionblur.config.MotionBlurConfig;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
-import org.ladysnake.satin.api.event.PostWorldRenderCallbackV2;
 import org.ladysnake.satin.api.managed.ManagedShaderEffect;
 import org.ladysnake.satin.api.managed.ShaderEffectManager;
 import me.shedaniel.clothconfig2.api.*;
