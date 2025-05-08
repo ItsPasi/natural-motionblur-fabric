@@ -12,7 +12,7 @@ public class ShaderManager {
     private static float currentBlur = 0.0f;
 
     private static final ManagedShaderEffect motionBlurShader = ShaderEffectManager.getInstance().manage(
-            MotionBlurMod.createIdentifier("shaders/post/motion_blur.json"),
+            NaturalMotionBlur.createIdentifier("shaders/post/motion_blur.json"),
             shader -> shader.setUniformValue("BlendFactor", ConfigManager.getConfig().motionBlurStrength)
     );
 

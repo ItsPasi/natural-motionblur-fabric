@@ -1,7 +1,6 @@
 package net.natural.motionblur.mixin;
 
 import net.minecraft.client.render.*;
-import net.natural.motionblur.MotionBlurMod;
 import net.natural.motionblur.ShaderManager;
 import org.joml.Matrix4f;
 import org.joml.Vector3f;
