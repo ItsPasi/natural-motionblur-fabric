@@ -23,7 +23,7 @@ public class KeybindingManager {
     }
 
     private static void toggleMotionBlur() {
-        net.natural.motionblur.config.MotionBlurConfig config = ConfigManager.getConfig();
+        ConfigEntries config = ConfigManager.getConfig();
         config.enabled = !config.enabled;
         ConfigManager.saveConfig();
     }

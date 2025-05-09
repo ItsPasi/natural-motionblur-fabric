@@ -2,6 +2,7 @@ package net.natural.motionblur;
 
 import net.minecraft.client.MinecraftClient;
 import net.natural.motionblur.config.ConfigManager;
+import net.natural.motionblur.config.ConfigEntries;
 import org.joml.Matrix4f;
 import org.joml.Vector3f;
 import org.ladysnake.satin.api.event.PostWorldRenderCallbackV2;
@@ -12,7 +13,7 @@ public class ShaderManager {
     private static float currentBlur = 0.0f;
 
     private static final ManagedShaderEffect motionBlurShader = ShaderEffectManager.getInstance().manage(
-            NaturalMotionBlur.createIdentifier("shaders/post/motion_blur.json"),
+            NaturalMotionBlurMod.createIdentifier("shaders/post/motion_blur.json"),
             shader -> shader.setUniformValue("BlendFactor", ConfigManager.getConfig().motionBlurStrength)
     );
 
@@ -25,23 +26,24 @@ public class ShaderManager {
         });
     }
 
+    // Checks if blur should be rendered
     private static boolean shouldRenderMotionBlur() {
-        net.natural.motionblur.config.MotionBlurConfig config = ConfigManager.getConfig();
+        ConfigEntries config = ConfigManager.getConfig();
+        // Config enabled?
         if (config.motionBlurStrength == 0 || !config.enabled) {
             return false;
         }
-
+        // Iris enabled?
         if (!IrisCheck.checkIrisShouldDisable()) {
             return false;
         }
-
-        // Check if in third person and if third person rendering is disabled
+        // F5 enabled?
         MinecraftClient client = MinecraftClient.getInstance();
         return client.options.getPerspective().isFirstPerson() || config.renderF5;
     }
 
     private static void renderMotionBlur(float deltaTick) {
-        net.natural.motionblur.config.MotionBlurConfig config = ConfigManager.getConfig();
+        ConfigEntries config = ConfigManager.getConfig();
         MinecraftClient client = MinecraftClient.getInstance();
 
         // Update strength if changed
@@ -51,16 +53,8 @@ public class ShaderManager {
         }
 
         // Set uniform values for the shader
-        motionBlurShader.setUniformValue("view_res",
-                (float) client.getFramebuffer().viewportWidth,
-                (float) client.getFramebuffer().viewportHeight
-        );
-
-        motionBlurShader.setUniformValue("view_pixel_size",
-                1.0f / client.getFramebuffer().viewportWidth,
-                1.0f / client.getFramebuffer().viewportHeight
-        );
-
+        motionBlurShader.setUniformValue("view_res", (float) client.getFramebuffer().viewportWidth, (float) client.getFramebuffer().viewportHeight);
+        motionBlurShader.setUniformValue("view_pixel_size", 1.0f / client.getFramebuffer().viewportWidth, 1.0f / client.getFramebuffer().viewportHeight);
         motionBlurShader.setUniformValue("motionBlurSamples", config.motionBlurSamples);
         motionBlurShader.setUniformValue("blurAlgorithm", config.blurAlgorithm.ordinal());
 

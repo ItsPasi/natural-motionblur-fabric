@@ -21,9 +21,9 @@ public class ConfigManager {
     private static final List<String> errorMessages = new ArrayList<>();
     private static boolean configReset = false;
 
-    private static MotionBlurConfig config;
+    private static ConfigEntries config;
 
-    public static MotionBlurConfig getConfig() {
+    public static ConfigEntries getConfig() {
         if (config == null) {
             loadConfig();
         }
@@ -38,7 +38,7 @@ public class ConfigManager {
 
         ConfigCategory general = builder.getOrCreateCategory(Text.literal("Motion Blur Options"));
         ConfigEntryBuilder entryBuilder = builder.entryBuilder();
-        MotionBlurConfig cfg = getConfig();
+        ConfigEntries cfg = getConfig();
 
         // Toggle Motion Blur
         general.addEntry(entryBuilder.startBooleanToggle(Text.literal("Toggle Motion Blur"), cfg.enabled)
@@ -75,9 +75,9 @@ public class ConfigManager {
         // Blur Algorithm
         general.addEntry(entryBuilder.startEnumSelector(
                         Text.literal("Blur Algorithm"),
-                        MotionBlurConfig.BlurAlgorithm.class,
+                        ConfigEntries.BlurAlgorithm.class,
                         cfg.blurAlgorithm)
-                .setDefaultValue(MotionBlurConfig.BlurAlgorithm.CENTERED)
+                .setDefaultValue(ConfigEntries.BlurAlgorithm.CENTERED)
                 .setTooltip(Text.literal("Changes the blur to either only blur frames behind player movement or in both directions. \n\n" +
                         "BACKWARDS has better blur continuity (less gaps in the blur) but a slight increase in perceived input lag. \n" +
                         "CENTERED has better visual uniformity (e.g. translucent objects) and no perceived increase in input lag."))
@@ -109,12 +109,44 @@ public class ConfigManager {
         errorMessages.clear();
 
         if (!configFile.exists()) {
-            config = new MotionBlurConfig();
+            config = new ConfigEntries();
             saveConfig();
         } else {
             try {
                 JsonObject configJson = GSON.fromJson(FileUtils.readFileToString(configFile, StandardCharsets.UTF_8), JsonObject.class);
-                config = new MotionBlurConfig();
+                config = new ConfigEntries();
+
+                // Process enabled
+                if (configJson.has("enabled")) {
+                    try {
+                        String enabledValue = configJson.get("enabled").getAsString();
+                        if ("true".equalsIgnoreCase(enabledValue) || "false".equalsIgnoreCase(enabledValue)) {
+                            config.enabled = Boolean.parseBoolean(enabledValue);
+                        } else {
+                            throw new IllegalArgumentException();
+                        }
+                    } catch (Exception e) {
+                        config.enabled = true;
+                        errorMessages.add("Toggle option of mod \"Natural Motion Blur\" was invalid and has been reset to default (enabled).");
+                        configModified = true;
+                    }
+                }
+
+                // Process renderF5
+                if (configJson.has("renderF5")) {
+                    try {
+                        String renderF5Value = configJson.get("renderF5").getAsString();
+                        if ("true".equalsIgnoreCase(renderF5Value) || "false".equalsIgnoreCase(renderF5Value)) {
+                            config.renderF5 = Boolean.parseBoolean(renderF5Value);
+                        } else {
+                            throw new IllegalArgumentException();
+                        }
+                    } catch (Exception e) {
+                        config.renderF5 = true;
+                        errorMessages.add("Third person rendering option of mod \"Natural Motion Blur\" was invalid and has been reset to default (enabled).");
+                        configModified = true;
+                    }
+                }
 
                 // Process motionBlurStrength
                 if (configJson.has("motionBlurStrength")) {
@@ -147,9 +179,9 @@ public class ConfigManager {
                 // Process blurAlgorithm
                 if (configJson.has("blurAlgorithm")) {
                     try {
-                        config.blurAlgorithm = MotionBlurConfig.BlurAlgorithm.valueOf(configJson.get("blurAlgorithm").getAsString().toUpperCase());
+                        config.blurAlgorithm = ConfigEntries.BlurAlgorithm.valueOf(configJson.get("blurAlgorithm").getAsString().toUpperCase());
                     } catch (Exception e) {
-                        config.blurAlgorithm = MotionBlurConfig.BlurAlgorithm.CENTERED;
+                        config.blurAlgorithm = ConfigEntries.BlurAlgorithm.CENTERED;
                         errorMessages.add("Blur algorithm of mod \"Natural Motion Blur\" was invalid and has been reset to default (CENTERED).");
                         configModified = true;
                     }
@@ -171,40 +203,8 @@ public class ConfigManager {
                         configModified = true;
                     }
                 }
-
-                // Process renderF5
-                if (configJson.has("renderF5")) {
-                    try {
-                        String renderF5Value = configJson.get("renderF5").getAsString();
-                        if ("true".equalsIgnoreCase(renderF5Value) || "false".equalsIgnoreCase(renderF5Value)) {
-                            config.renderF5 = Boolean.parseBoolean(renderF5Value);
-                        } else {
-                            throw new IllegalArgumentException();
-                        }
-                    } catch (Exception e) {
-                        config.renderF5 = true;
-                        errorMessages.add("Third person rendering option of mod \"Natural Motion Blur\" was invalid and has been reset to default (enabled).");
-                        configModified = true;
-                    }
-                }
-
-                // Process enabled
-                if (configJson.has("enabled")) {
-                    try {
-                        String enabledValue = configJson.get("enabled").getAsString();
-                        if ("true".equalsIgnoreCase(enabledValue) || "false".equalsIgnoreCase(enabledValue)) {
-                            config.enabled = Boolean.parseBoolean(enabledValue);
-                        } else {
-                            throw new IllegalArgumentException();
-                        }
-                    } catch (Exception e) {
-                        config.enabled = true;
-                        errorMessages.add("Toggle option of mod \"Natural Motion Blur\" was invalid and has been reset to default (enabled).");
-                        configModified = true;
-                    }
-                }
             } catch (Exception e) {
-                config = new MotionBlurConfig();
+                config = new ConfigEntries();
                 saveConfig();
                 configReset = true;
                 errorMessages.add("Config file of mod \"Natural Motion Blur\" could not be loaded correctly and has been reset to default.");

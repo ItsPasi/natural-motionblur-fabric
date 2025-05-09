@@ -7,7 +7,7 @@ import net.natural.motionblur.config.ConfigManager;
 import net.natural.motionblur.config.EventManager;
 import net.natural.motionblur.config.KeybindingManager;
 
-public class NaturalMotionBlur implements ClientModInitializer {
+public class NaturalMotionBlurMod implements ClientModInitializer {
     public static final String ID = "naturalmotionblur";
 
     @Override
