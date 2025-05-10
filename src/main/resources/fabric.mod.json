@@ -16,7 +16,7 @@
   "environment": "client",
   "entrypoints": {
     "client": [
-      "net.natural.motionblur.MotionBlurMod"
+      "net.natural.motionblur.NaturalMotionBlurMod"
     ]
   },
   "mixins": [

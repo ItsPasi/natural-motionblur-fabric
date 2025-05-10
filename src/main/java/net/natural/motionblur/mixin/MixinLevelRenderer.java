@@ -2,7 +2,7 @@ package net.natural.motionblur.mixin;
 
 import net.minecraft.client.util.ObjectAllocator;
 import net.minecraft.client.render.*;
-import net.natural.motionblur.MotionBlurMod;
+import net.natural.motionblur.ShaderManager;
 import org.joml.Matrix4f;
 import org.joml.Vector3f;
 import org.spongepowered.asm.mixin.Mixin;
@@ -21,7 +21,7 @@ public class MixinLevelRenderer {
     @Inject(method = "render", at = @At("HEAD"))
     private void setMatrices(ObjectAllocator allocator, RenderTickCounter tickCounter, boolean renderBlockOutline, Camera camera, GameRenderer gameRenderer, Matrix4f positionMatrix, Matrix4f projectionMatrix, CallbackInfo ci) {
         float tickDelta = tickCounter.getTickDelta(true);
-        MotionBlurMod.setFrameMotionBlur(positionMatrix, prevModelView,
+        ShaderManager.setFrameMotionBlur(positionMatrix, prevModelView,
                 gameRenderer.getBasicProjectionMatrix(((GameRendererInvoker) gameRenderer).invokeGetFov(camera, tickDelta, true)),
                 prevProjection,
                 new Vector3f(
