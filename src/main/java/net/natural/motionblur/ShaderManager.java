@@ -50,6 +50,7 @@ public class ShaderManager {
 
     private static void renderMotionBlur(float deltaTick) {
         ConfigEntries config = ConfigManager.getConfig();
+        MinecraftClient client = MinecraftClient.getInstance();
 
         // Update strength if changed
         if (currentBlur != config.motionBlurStrength) {
@@ -58,8 +59,8 @@ public class ShaderManager {
         }
 
         // Set uniform values for the shader
-        motionBlurShader.setUniformValue("view_res", (float) MinecraftClient.getInstance().getFramebuffer().viewportWidth, (float) MinecraftClient.getInstance().getFramebuffer().viewportHeight);
-        motionBlurShader.setUniformValue("view_pixel_size", 1f / MinecraftClient.getInstance().getFramebuffer().viewportWidth, 1f / MinecraftClient.getInstance().getFramebuffer().viewportHeight);
+        motionBlurShader.setUniformValue("view_res", (float) client.getFramebuffer().viewportWidth, (float) client.getFramebuffer().viewportHeight);
+        motionBlurShader.setUniformValue("view_pixel_size", 1.0f / client.getFramebuffer().viewportWidth, 1.0f / client.getFramebuffer().viewportHeight);
         motionBlurShader.setUniformValue("motionBlurSamples", config.motionBlurSamples);
         motionBlurShader.setUniformValue("blurAlgorithm", config.blurAlgorithm.ordinal());
 
