@@ -61,7 +61,7 @@ public class ShaderManager {
         // Set uniform values for the shader
         motionBlurShader.setUniformValue("view_res", (float) client.getFramebuffer().viewportWidth, (float) client.getFramebuffer().viewportHeight);
         motionBlurShader.setUniformValue("view_pixel_size", 1.0f / client.getFramebuffer().viewportWidth, 1.0f / client.getFramebuffer().viewportHeight);
-        motionBlurShader.setUniformValue("motionBlurSamples", config.motionBlurSamples);
+        motionBlurShader.setUniformValue("motionBlurSamples", config.motionBlurSamples.getValue());
         motionBlurShader.setUniformValue("blurAlgorithm", config.blurAlgorithm.ordinal());
 
         // Render the shader effect

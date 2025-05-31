@@ -42,19 +42,26 @@ vec3 reproject(vec3 screen_pos) {
     return prev_pos * 0.5 + 0.5;
 }
 
+float noise(vec2 pos) {
+    return fract(52.9829189 * fract(0.06711056 * pos.x + 0.00583715 * pos.y));
+}
+
 void main() {
     ivec2 texel = ivec2(gl_FragCoord.xy);
 
     float depth = texelFetch(MainDepthSampler, texel, 0).x;
     vec2 velocity = texCoord - reproject(vec3(texCoord, depth)).xy;
-    vec2 increment = (BlendFactor / float(motionBlurSamples)) * velocity;
+
+    vec2 totalOffset = BlendFactor * velocity;
+    vec2 baseStep = totalOffset / float(motionBlurSamples);
 
     vec3 color_sum = vec3(0.0);
     float weight_sum = 0.0;
 
     if (blurAlgorithm == 0) {
         for (int i = 0; i < motionBlurSamples; ++i) {
-            vec2 pos = texCoord + float(i) * increment;
+            float jitter = noise(texCoord * view_res + vec2(float(i), float(i) * 1.5));
+            vec2 pos = texCoord + (float(i) + jitter) * baseStep;
             ivec2 tap = ivec2(pos * view_res);
             vec3 color = texelFetch(MainSampler, tap, 0).rgb;
             float weight = (clamp01(pos) == pos) ? 1.0 : 0.0;
@@ -64,7 +71,8 @@ void main() {
         }
     } else {
         for (int i = -halfMotionBlurSamples + 1; i <= halfMotionBlurSamples; ++i) {
-            vec2 pos = texCoord + float(i) * increment;
+            float jitter = noise(texCoord * view_res + vec2(float(i), float(i) * 1.5));
+            vec2 pos = texCoord + (float(i) + jitter - 1.0) * baseStep;
             ivec2 tap = ivec2(pos * view_res);
             vec3 color = texelFetch(MainSampler, tap, 0).rgb;
             float weight = (clamp01(pos) == pos) ? 1.0 : 0.0;
