@@ -60,8 +60,9 @@ void main() {
 
     if (blurAlgorithm == 0) {
         for (int i = 0; i < motionBlurSamples; ++i) {
-            float jitter = noise(texCoord * view_res + vec2(float(i), float(i) * 1.5));
-            vec2 pos = texCoord + (float(i) + jitter) * baseStep;
+            float jitter = noise(texCoord * view_res + vec2(float(i), float(i) * 1.4));
+            float blur_backwards = float(i) + jitter;
+            vec2 pos = texCoord + blur_backwards * baseStep;
             ivec2 tap = ivec2(pos * view_res);
             vec3 color = texelFetch(MainSampler, tap, 0).rgb;
             float weight = (clamp01(pos) == pos) ? 1.0 : 0.0;
@@ -70,9 +71,10 @@ void main() {
             weight_sum += weight;
         }
     } else {
-        for (int i = -halfMotionBlurSamples + 1; i <= halfMotionBlurSamples; ++i) {
-            float jitter = noise(texCoord * view_res + vec2(float(i), float(i) * 1.5));
-            vec2 pos = texCoord + (float(i) + jitter - 1.0) * baseStep;
+        for (int i = 0; i < motionBlurSamples; ++i) {
+            float jitter = noise(texCoord * view_res + vec2(float(i), float(i) * 1.4));
+            float blur_centered = (float(i) - float(motionBlurSamples) / 2.0 + jitter);
+            vec2 pos = texCoord + blur_centered * baseStep;
             ivec2 tap = ivec2(pos * view_res);
             vec3 color = texelFetch(MainSampler, tap, 0).rgb;
             float weight = (clamp01(pos) == pos) ? 1.0 : 0.0;

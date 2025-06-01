@@ -70,8 +70,8 @@ public class ConfigManager {
                         cfg.motionBlurSamples)
                 .setDefaultValue(ConfigEntries.MotionBlurSamples.MEDIUM)
                 .setTooltip(Text.literal("Changes the quality of the blur. \n\n" +
-                        "HIGH is mostly useful for lower FPS(<60) \n" +
-                        "LOW is good for less performance impact but will impact visual quality negatively."))
+                        "HIGH is mostly useful for lower FPS (‹30) \n" +
+                        "LOW is good for less performance impact."))
                 .setSaveConsumer(newValue -> cfg.motionBlurSamples = newValue)
                 .build());
 
