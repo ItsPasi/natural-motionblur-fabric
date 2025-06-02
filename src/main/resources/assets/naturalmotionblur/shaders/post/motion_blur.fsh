@@ -12,7 +12,6 @@ uniform mat4 projection;
 uniform vec3 cameraPos;
 uniform vec3 prevCameraPos;
 uniform int motionBlurSamples;
-int halfMotionBlurSamples = motionBlurSamples / 2;
 uniform int blurAlgorithm;
 in vec2 texCoord;
 layout(location = 0) out vec4 color;
