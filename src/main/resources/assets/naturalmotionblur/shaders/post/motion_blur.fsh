@@ -57,34 +57,19 @@ void main() {
     vec3 color_sum = vec3(0.0);
     float weight_sum = 0.0;
 
-    if (blurAlgorithm == 0) {
-        for (int i = 0; i < motionBlurSamples; ++i) {
-            float jitter = noise(texCoord * view_res + vec2(float(i), float(i) * 1.4));
-            float blur_backwards = float(i) + jitter;
-            vec2 pos = texCoord + blur_backwards * baseStep;
-            ivec2 tap = ivec2(pos * view_res);
-            vec3 color = texelFetch(MainSampler, tap, 0).rgb;
-            float weight = (clamp01(pos) == pos) ? 1.0 : 0.0;
-
-            color_sum += color * color * weight;
-            weight_sum += weight;
+    float sample_offset;
+    for (int i = 0; i < motionBlurSamples; ++i) {
+        float jitter = noise(texCoord * view_res + vec2(float(i), float(i) * 1.4));
+        float blur_backwards = float(i) + jitter;
+        if (blurAlgorithm == 0) {
+            sample_offset = float(i) + jitter;
+        } else {
+            sample_offset = (float(i) - float(motionBlurSamples) / 2.0 + jitter);
         }
-    } else {
-        for (int i = 0; i < motionBlurSamples; ++i) {
-            float jitter = noise(texCoord * view_res + vec2(float(i), float(i) * 1.4));
-            float blur_centered = (float(i) - float(motionBlurSamples) / 2.0 + jitter);
-            vec2 pos = texCoord + blur_centered * baseStep;
-            ivec2 tap = ivec2(pos * view_res);
-            vec3 color = texelFetch(MainSampler, tap, 0).rgb;
-            float weight = (clamp01(pos) == pos) ? 1.0 : 0.0;
+        vec2 pos = texCoord + sample_offset * baseStep;
+        vec3 color = texture(MainSampler, pos).rgb;
 
-            color_sum += color * color * weight;
-            weight_sum += weight;
-        }
+        color_sum += color * color;
     }
-    if (weight_sum > 0.0) {
-        color = vec4(sqrt(color_sum * rcp(weight_sum)), 1.0);
-    } else {
-        color = vec4(texelFetch(MainSampler, texel, 0).rgb, 1.0);
-    }
+    color = vec4(sqrt(color_sum * rcp(float(motionBlurSamples))), 1.0);
 }
