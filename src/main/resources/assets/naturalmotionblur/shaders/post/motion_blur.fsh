@@ -16,7 +16,6 @@ uniform int blurAlgorithm;
 in vec2 texCoord;
 layout(location = 0) out vec4 color;
 
-#define clamp01(x) clamp(x, 0.0, 1.0)
 #define rcp(x) (1.0 / (x))
 
 vec3 transform(mat4 m, vec3 pos) {
@@ -51,25 +50,21 @@ void main() {
     float depth = texelFetch(MainDepthSampler, texel, 0).x;
     vec2 velocity = texCoord - reproject(vec3(texCoord, depth)).xy;
 
+    float inverse_samples = rcp(motionBlurSamples);
     vec2 totalOffset = BlendFactor * velocity;
-    vec2 baseStep = totalOffset / float(motionBlurSamples);
+    vec2 baseStep = totalOffset * inverse_samples;
 
     vec3 color_sum = vec3(0.0);
-    float weight_sum = 0.0;
 
-    float sample_offset;
     for (int i = 0; i < motionBlurSamples; ++i) {
         float jitter = noise(texCoord * view_res + vec2(float(i), float(i) * 1.4));
-        float blur_backwards = float(i) + jitter;
-        if (blurAlgorithm == 0) {
-            sample_offset = float(i) + jitter;
-        } else {
-            sample_offset = (float(i) - float(motionBlurSamples) / 2.0 + jitter);
-        }
-        vec2 pos = texCoord + sample_offset * baseStep;
-        vec3 color = texture(MainSampler, pos).rgb;
+        float offset_centered = float(i) - motionBlurSamples * 0.5;
+        float sample_offset = mix(float(i), offset_centered, float(blurAlgorithm)) + jitter;
+
+        vec2 sample_uv = texCoord + sample_offset * baseStep;
+        vec3 color = texture(MainSampler, sample_uv).rgb;
 
         color_sum += color * color;
     }
-    color = vec4(sqrt(color_sum * rcp(float(motionBlurSamples))), 1.0);
+    color = vec4(sqrt(color_sum * inverse_samples), 1.0);
 }
