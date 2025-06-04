@@ -63,18 +63,6 @@ public class ConfigManager {
                 .setSaveConsumer(newValue -> cfg.motionBlurStrength = newValue)
                 .build());
 
-        // Motion Blur Sample Amount
-        general.addEntry(entryBuilder.startEnumSelector(
-                        Text.literal("Blur Quality"),
-                        ConfigEntries.MotionBlurSamples.class,
-                        cfg.motionBlurSamples)
-                .setDefaultValue(ConfigEntries.MotionBlurSamples.MEDIUM)
-                .setTooltip(Text.literal("Changes the quality of the blur. \n\n" +
-                        "HIGH is mostly useful for lower FPS (‹30) \n" +
-                        "LOW is good for less performance impact."))
-                .setSaveConsumer(newValue -> cfg.motionBlurSamples = newValue)
-                .build());
-
         // Blur Algorithm
         general.addEntry(entryBuilder.startEnumSelector(
                         Text.literal("Blur Algorithm"),
@@ -162,17 +150,6 @@ public class ConfigManager {
                     } catch (Exception e) {
                         config.motionBlurStrength = 1.0F;
                         errorMessages.add("Strength value of mod \"Natural Motion Blur\" was invalid and has been reset to default (1.0).");
-                        configModified = true;
-                    }
-                }
-
-                // Process motionBlurSamples
-                if (configJson.has("motionBlurSamples")) {
-                    try {
-                        config.motionBlurSamples = ConfigEntries.MotionBlurSamples.valueOf(configJson.get("motionBlurSamples").getAsString().toUpperCase());
-                    } catch (Exception e) {
-                        config.motionBlurSamples = ConfigEntries.MotionBlurSamples.MEDIUM;
-                        errorMessages.add("Sample amount of mod \"Natural Motion Blur\" was invalid and has been reset to default (20).");
                         configModified = true;
                     }
                 }
