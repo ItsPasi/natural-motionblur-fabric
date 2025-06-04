@@ -61,8 +61,8 @@ void main() {
         float offset_centered = float(i) - motionBlurSamples * 0.5;
         float sample_offset = mix(float(i), offset_centered, float(blurAlgorithm)) + jitter;
 
-        vec2 sample_uv = texCoord + sample_offset * baseStep;
-        vec3 color = texture(MainSampler, sample_uv).rgb;
+        vec2 pos = texCoord + sample_offset * baseStep;
+        vec3 color = texture(MainSampler, pos).rgb;
 
         color_sum += color * color;
     }
