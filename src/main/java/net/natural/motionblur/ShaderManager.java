@@ -25,6 +25,7 @@ public class ShaderManager {
         WorldRenderEvents.END.register((WorldRenderContext ctx) -> {
             long now = System.nanoTime();
             float deltaTime = (now - lastNano) / 1_000_000_000.0f;
+            float deltaTick = deltaTime * 20.0f;
             lastNano = now;
 
             // Calculate approximate FPS
@@ -35,7 +36,7 @@ public class ShaderManager {
             }
 
             if (shouldRenderMotionBlur()) {
-                renderMotionBlur(deltaTime);
+                renderMotionBlur(deltaTick);
             }
         });
     }
@@ -56,7 +57,7 @@ public class ShaderManager {
         return client.options.getPerspective().isFirstPerson() || config.renderF5;
     }
 
-    private static void renderMotionBlur(float deltaTime) {
+    private static void renderMotionBlur(float deltaTick) {
         ConfigEntries config = ConfigManager.getConfig();
         MinecraftClient client = MinecraftClient.getInstance();
 
@@ -68,20 +69,23 @@ public class ShaderManager {
 
         // Determine sample amount based on FPS
         int sampleAmount = getSampleAmountForFPS(currentFPS);
+        int halfSampleAmount = sampleAmount / 2;
 
         // Set uniform values for the shader
         motionBlurShader.setUniformValue("view_res", (float) client.getFramebuffer().viewportWidth, (float) client.getFramebuffer().viewportHeight);
         motionBlurShader.setUniformValue("view_pixel_size", 1.0f / client.getFramebuffer().viewportWidth, 1.0f / client.getFramebuffer().viewportHeight);
         motionBlurShader.setUniformValue("motionBlurSamples", sampleAmount);
+        motionBlurShader.setUniformValue("halfSamples", halfSampleAmount);
         motionBlurShader.setUniformValue("blurAlgorithm", config.blurAlgorithm.ordinal());
 
         // Render the shader effect
-        motionBlurShader.render(deltaTime * 20.0f); // SatinAPI's render method expects deltaTick
+        motionBlurShader.render(deltaTick); // SatinAPI's render method expects deltaTick
     }
 
     // Determine sample amount based on FPS
     private static int getSampleAmountForFPS(float fps) {
         if (fps > 360) {return 8;}
+        else if (fps > 120) {return 10;}
         else if (fps > 60) {return 12;}
         else {return 20;}
     }

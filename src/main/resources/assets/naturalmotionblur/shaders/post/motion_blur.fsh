@@ -8,10 +8,10 @@ uniform mat4 mvInverse;
 uniform mat4 projInverse;
 uniform mat4 prevModelView;
 uniform mat4 prevProjection;
-uniform mat4 projection;
 uniform vec3 cameraPos;
 uniform vec3 prevCameraPos;
 uniform int motionBlurSamples;
+uniform int halfSamples;
 uniform int blurAlgorithm;
 in vec2 texCoord;
 layout(location = 0) out vec4 color;
@@ -19,16 +19,16 @@ layout(location = 0) out vec4 color;
 #define rcp(x) (1.0 / (x))
 
 vec3 transform(mat4 m, vec3 pos) {
-    return mat3(m) * pos + m[3].xyz;
+    return (m * vec4(pos, 1.0)).xyz;
 }
 
 vec3 project_and_divide(mat4 m, vec3 pos) {
     vec4 h = m * vec4(pos, 1.0);
-    return h.xyz / h.w;
+    return h.xyz * rcp(h.w);
 }
 
 vec3 screen_to_scene_space(vec3 screen_pos) {
-    vec3 ndc = 2.0 * screen_pos - 1.0;
+    vec3 ndc = screen_pos * 2.0 - 1.0;
     vec3 view_pos = project_and_divide(projInverse, ndc);
     return transform(mvInverse, view_pos);
 }
@@ -55,11 +55,13 @@ void main() {
     vec2 baseStep = totalOffset * inverse_samples;
 
     vec3 color_sum = vec3(0.0);
+    vec2 seed = texCoord * view_res;
 
     for (int i = 0; i < motionBlurSamples; ++i) {
-        float jitter = noise(texCoord * view_res + vec2(float(i), float(i) * 1.4));
-        float offset_centered = float(i) - motionBlurSamples * 0.5;
-        float sample_offset = mix(float(i), offset_centered, float(blurAlgorithm)) + jitter;
+        float jitter = noise(seed + vec2(float(i), float(i) * 1.4));
+        float offset_centered = float(i) - halfSamples;
+        float sample_index = blurAlgorithm == 0 ? float(i) : offset_centered;
+        float sample_offset = sample_index + jitter;
 
         vec2 pos = texCoord + sample_offset * baseStep;
         vec3 color = texture(MainSampler, pos).rgb;
