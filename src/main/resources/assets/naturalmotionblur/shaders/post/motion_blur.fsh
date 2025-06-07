@@ -40,6 +40,10 @@ vec3 reproject(vec3 screen_pos) {
     return prev_pos * 0.5 + 0.5;
 }
 
+vec2 clamp_length(vec2 v) {
+    return length(v) > 1.0 ? normalize(v) : v;
+}
+
 float noise(vec2 pos) {
     return fract(52.9829189 * fract(0.06711056 * pos.x + 0.00583715 * pos.y));
 }
@@ -49,6 +53,7 @@ void main() {
 
     float depth = texelFetch(MainDepthSampler, texel, 0).x;
     vec2 velocity = texCoord - reproject(vec3(texCoord, depth)).xy;
+    velocity = clamp_length(velocity);
 
     float inverse_samples = rcp(motionBlurSamples);
     vec2 totalOffset = BlendFactor * velocity;
