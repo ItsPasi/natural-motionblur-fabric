@@ -4,7 +4,6 @@ import net.minecraft.client.util.InputUtil;
 
 public class ConfigEntries {
     public float motionBlurStrength = 1.0F;
-    public int motionBlurSamples = 20;
     public enum BlurAlgorithm {BACKWARDS, CENTERED}
     public BlurAlgorithm blurAlgorithm = BlurAlgorithm.CENTERED;
     public boolean renderF5 = true;
