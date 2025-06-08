@@ -17,7 +17,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 public class ConfigManager {
-    private static final Gson GSON = new GsonBuilder().setLenient().setPrettyPrinting().create();
+    private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
     private static final List<String> errorMessages = new ArrayList<>();
     private static boolean configReset = false;
 
@@ -61,15 +61,6 @@ public class ConfigManager {
                 .setTooltip(Text.literal("Sets the intensity of the blur. \n" +
                         "Default setting (1.0) blurs frames ideally in correlation to the framerate."))
                 .setSaveConsumer(newValue -> cfg.motionBlurStrength = newValue)
-                .build());
-
-        // Motion Blur Sample Amount
-        general.addEntry(entryBuilder.startIntField(Text.literal("Motion Blur Sample Amount"), cfg.motionBlurSamples)
-                .setDefaultValue(20)
-                .setMin(0)
-                .setMax(1000)
-                .setTooltip(Text.literal("Higher values improve visual appearance (especially at lower FPS) but impact performance negatively."))
-                .setSaveConsumer(newValue -> cfg.motionBlurSamples = newValue)
                 .build());
 
         // Blur Algorithm
@@ -155,23 +146,10 @@ public class ConfigManager {
                         if (strength < -1000.0F || strength > 1000.0F) {
                             throw new IllegalArgumentException();
                         }
+                        config.motionBlurStrength = strength;
                     } catch (Exception e) {
                         config.motionBlurStrength = 1.0F;
                         errorMessages.add("Strength value of mod \"Natural Motion Blur\" was invalid and has been reset to default (1.0).");
-                        configModified = true;
-                    }
-                }
-
-                // Process motionBlurSamples
-                if (configJson.has("motionBlurSamples")) {
-                    try {
-                        int samples = configJson.get("motionBlurSamples").getAsInt();
-                        if (samples < 0 || samples > 1000) {
-                            throw new IllegalArgumentException();
-                        }
-                    } catch (Exception e) {
-                        config.motionBlurSamples = 20;
-                        errorMessages.add("Sample amount of mod \"Natural Motion Blur\" was invalid and has been reset to default (20).");
                         configModified = true;
                     }
                 }
