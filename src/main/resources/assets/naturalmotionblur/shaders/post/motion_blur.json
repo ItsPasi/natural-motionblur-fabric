@@ -21,6 +21,7 @@
         { "name": "ProjMat",  "type": "matrix4x4", "count": 16, "values": [ 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0 ] },
         { "name": "motionBlurSamples", "type":  "int", "count":  1, "values": [0]},
         { "name": "halfSamples", "type":  "int", "count":  1, "values": [0]},
+        { "name": "inverseSamples", "type":  "float", "count":  1, "values": [1.0] },
         { "name": "blurAlgorithm", "type":  "int", "count":  1, "values": [0]}
     ]
 }

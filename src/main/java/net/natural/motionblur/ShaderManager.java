@@ -70,12 +70,14 @@ public class ShaderManager {
         // Determine sample amount based on FPS
         int sampleAmount = getSampleAmountForFPS(currentFPS);
         int halfSampleAmount = sampleAmount / 2;
+        float invSamples = 1.0f / sampleAmount;
 
         // Set uniform values for the shader
         motionBlurShader.setUniformValue("view_res", (float) client.getFramebuffer().viewportWidth, (float) client.getFramebuffer().viewportHeight);
         motionBlurShader.setUniformValue("view_pixel_size", 1.0f / client.getFramebuffer().viewportWidth, 1.0f / client.getFramebuffer().viewportHeight);
         motionBlurShader.setUniformValue("motionBlurSamples", sampleAmount);
         motionBlurShader.setUniformValue("halfSamples", halfSampleAmount);
+        motionBlurShader.setUniformValue("inverseSamples", invSamples);
         motionBlurShader.setUniformValue("blurAlgorithm", config.blurAlgorithm.ordinal());
 
         // Render the shader effect
