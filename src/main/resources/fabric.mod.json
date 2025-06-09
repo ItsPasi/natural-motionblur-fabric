@@ -8,7 +8,7 @@
     "ItsPasi"
   ],
   "contributors": [
-    "IMS212", 
+    "IMS212",
     "Romain H",
     "What42Pizza"
   ],
@@ -28,6 +28,9 @@
     "cloth-config": "*",
     "satin": "*",
     "java": ">=17"
+  },
+  "breaks": {
+    "vulkanmod": "*"
   },
   "icon": "icon.png"
 }
