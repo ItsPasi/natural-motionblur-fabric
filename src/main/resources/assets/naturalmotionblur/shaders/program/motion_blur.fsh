@@ -1,7 +1,7 @@
 #version 330 core
 
-uniform sampler2D MainSampler;
-uniform sampler2D MainDepthSampler;
+uniform sampler2D DiffuseSampler;
+uniform sampler2D DiffuseDepthSampler;
 uniform float BlendFactor;
 uniform float inverseSamples;
 uniform vec3 cameraPos;
@@ -53,7 +53,7 @@ float noise(vec2 pos) {
 void main() {
     ivec2 texel = ivec2(gl_FragCoord.xy);
 
-    float depth = texelFetch(MainDepthSampler, texel, 0).x;
+    float depth = texelFetch(DiffuseDepthSampler, texel, 0).x;
     vec2 velocity = texCoord - reproject(vec3(texCoord, depth)).xy;
     velocity = clampLength(velocity);
 
@@ -72,7 +72,7 @@ void main() {
         float sample_offset = sample_index + jitter;
 
         vec2 pos = texCoord + sample_offset * baseStep;
-        vec3 color = texture(MainSampler, pos).rgb;
+        vec3 color = texture(DiffuseSampler, pos).rgb;
 
         color_sum += color * color;
     }
