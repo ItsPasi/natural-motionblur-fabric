@@ -28,15 +28,15 @@ public class ShaderManager {
             float deltaTick = deltaTime * 20.0f;
             lastNano = now;
 
-            // Calculate approximate FPS
-            if (deltaTime > 0) {
+            // FPS calculation
+            if (deltaTime > 0 && deltaTime < 1.0f) {
                 currentFPS = 1.0f / deltaTime;
             } else {
                 currentFPS = 0.0f; // Avoid division by zero
             }
 
             if (shouldRenderMotionBlur()) {
-                renderMotionBlur(deltaTick);
+                applyMotionBlur(deltaTick);
             }
         });
     }
@@ -57,14 +57,27 @@ public class ShaderManager {
         return client.options.getPerspective().isFirstPerson() || config.renderF5;
     }
 
-    private static void renderMotionBlur(float deltaTick) {
+    private static void applyMotionBlur(float deltaTick) {
         ConfigEntries config = ConfigManager.getConfig();
         MinecraftClient client = MinecraftClient.getInstance();
 
+        // Detect refresh rate on first use
+        MonitorInfoProvider.updateDisplayInfo();
+        int displayRefreshRate = MonitorInfoProvider.getRefreshRate();
+
+        // Scale blur based on FPS vs refresh rate
+        float baseStrength = config.motionBlurStrength;
+        float scaledStrength = baseStrength;
+        if (config.useRefreshRateScaling) {
+            float fpsOverRefresh = (displayRefreshRate > 0) ? currentFPS / displayRefreshRate : 1.0f;
+            if (fpsOverRefresh < 1.0f) fpsOverRefresh = 1.0f; // don't weaken blur under refresh rate
+            scaledStrength = baseStrength * fpsOverRefresh;
+        }
+
         // Update strength if changed
-        if (currentBlur != config.motionBlurStrength) {
-            motionBlurShader.setUniformValue("BlendFactor", config.motionBlurStrength);
-            currentBlur = config.motionBlurStrength;
+        if (currentBlur != scaledStrength) {
+            motionBlurShader.setUniformValue("BlendFactor", scaledStrength);
+            currentBlur = scaledStrength;
         }
 
         // Determine sample amount based on FPS
@@ -86,21 +99,28 @@ public class ShaderManager {
 
     // Determine sample amount based on FPS
     private static int getSampleAmountForFPS(float fps) {
-        if (fps > 360) {return 8;}
-        else if (fps > 120) {return 10;}
-        else if (fps > 60) {return 12;}
-        else {return 20;}
+        if (fps > 360) return 8;
+        else if (fps > 120) return 10;
+        else if (fps > 60) return 12;
+        else return 20;
     }
+
+    private static final Matrix4f tempModelView = new Matrix4f();
+    private static final Matrix4f tempPrevModelView = new Matrix4f();
+    private static final Matrix4f tempProjection = new Matrix4f();
+    private static final Matrix4f tempPrevProjection = new Matrix4f();
+    private static final Matrix4f tempProjInverse = new Matrix4f();
+    private static final Matrix4f tempMvInverse = new Matrix4f();
 
     public static void setFrameMotionBlur(Matrix4f modelView, Matrix4f prevModelView,
                                           Matrix4f projection, Matrix4f prevProjection,
                                           Vector3f cameraPos, Vector3f prevCameraPos) {
-        motionBlurShader.setUniformValue("modelView", new Matrix4f(modelView));
-        motionBlurShader.setUniformValue("prevModelView", new Matrix4f(prevModelView));
-        motionBlurShader.setUniformValue("projection", new Matrix4f(projection));
-        motionBlurShader.setUniformValue("prevProjection", new Matrix4f(prevProjection));
-        motionBlurShader.setUniformValue("projInverse", new Matrix4f(projection).invert());
-        motionBlurShader.setUniformValue("mvInverse", new Matrix4f(modelView).invert());
+        motionBlurShader.setUniformValue("modelView", tempModelView.set(modelView));
+        motionBlurShader.setUniformValue("prevModelView", tempPrevModelView.set(prevModelView));
+        motionBlurShader.setUniformValue("projection", tempProjection.set(projection));
+        motionBlurShader.setUniformValue("prevProjection", tempPrevProjection.set(prevProjection));
+        motionBlurShader.setUniformValue("projInverse", tempProjInverse.set(projection).invert());
+        motionBlurShader.setUniformValue("mvInverse", tempMvInverse.set(modelView).invert());
         motionBlurShader.setUniformValue("cameraPos", cameraPos.x, cameraPos.y, cameraPos.z);
         motionBlurShader.setUniformValue("prevCameraPos", prevCameraPos.x, prevCameraPos.y, prevCameraPos.z);
     }

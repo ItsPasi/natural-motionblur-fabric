@@ -8,6 +8,7 @@ public class ConfigEntries {
     public BlurAlgorithm blurAlgorithm = BlurAlgorithm.CENTERED;
     public boolean renderF5 = true;
     public boolean enabled = true;
+    public boolean useRefreshRateScaling = true;
     public String toggleKey = "key.keyboard.v";
 
     public InputUtil.Key getToggleKey() {

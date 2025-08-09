@@ -53,6 +53,14 @@ public class ConfigManager {
                 .setSaveConsumer(newValue -> cfg.renderF5 = newValue)
                 .build());
 
+        // Use Refresh Rate Scaling
+        general.addEntry(entryBuilder.startBooleanToggle(Text.literal("Use Refresh Rate Scaling"), cfg.useRefreshRateScaling)
+                .setDefaultValue(true)
+                .setTooltip(Text.literal("If enabled, motion blur strength will adjust automatically based on FPS relative to your display's refresh rate.\n" +
+                        "When disabled, the blur strength is fixed to the set value."))
+                .setSaveConsumer(newValue -> cfg.useRefreshRateScaling = newValue)
+                .build());
+
         // Motion Blur Strength
         general.addEntry(entryBuilder.startFloatField(Text.literal("Motion Blur Strength"), cfg.motionBlurStrength)
                 .setDefaultValue(1.0F)
@@ -135,6 +143,22 @@ public class ConfigManager {
                     } catch (Exception e) {
                         config.renderF5 = true;
                         errorMessages.add("Third person rendering option of mod \"Natural Motion Blur\" was invalid and has been reset to default (enabled).");
+                        configModified = true;
+                    }
+                }
+
+                // Process useRefreshRateScaling
+                if (configJson.has("useRefreshRateScaling")) {
+                    try {
+                        String scalingValue = configJson.get("useRefreshRateScaling").getAsString();
+                        if ("true".equalsIgnoreCase(scalingValue) || "false".equalsIgnoreCase(scalingValue)) {
+                            config.useRefreshRateScaling = Boolean.parseBoolean(scalingValue);
+                        } else {
+                            throw new IllegalArgumentException();
+                        }
+                    } catch (Exception e) {
+                        config.useRefreshRateScaling = true;
+                        errorMessages.add("Refresh rate scaling option of mod \"Natural Motion Blur\" was invalid and has been reset to default (enabled).");
                         configModified = true;
                     }
                 }
