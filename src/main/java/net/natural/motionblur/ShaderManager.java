@@ -14,6 +14,7 @@ public class ShaderManager {
     private static long lastNano;
     private static float currentBlur = 0.0f;
     private static float currentFPS = 0.0f;
+    private static int sampleAmount = 100;
 
     private static final ManagedShaderEffect motionBlurShader = ShaderEffectManager.getInstance().manage(
             NaturalMotionBlurMod.createIdentifier("motion_blur"),
@@ -72,6 +73,11 @@ public class ShaderManager {
             float fpsOverRefresh = (displayRefreshRate > 0) ? currentFPS / displayRefreshRate : 1.0f;
             if (fpsOverRefresh < 1.0f) fpsOverRefresh = 1.0f; // don't weaken blur under refresh rate
             scaledStrength = baseStrength * fpsOverRefresh;
+
+            // Scale sample amount proportionally when FPS exceeds refresh rate
+            if (fpsOverRefresh > 1.0f) {
+                sampleAmount = (int) (100 * fpsOverRefresh);
+            }
         }
 
         // Update strength if changed
@@ -80,29 +86,14 @@ public class ShaderManager {
             currentBlur = scaledStrength;
         }
 
-        // Determine sample amount based on FPS
-        int sampleAmount = getSampleAmountForFPS(currentFPS);
-        int halfSampleAmount = sampleAmount / 2;
-        float invSamples = 1.0f / sampleAmount;
-
         // Set uniform values for the shader
         motionBlurShader.setUniformValue("view_res", (float) client.getFramebuffer().viewportWidth, (float) client.getFramebuffer().viewportHeight);
         motionBlurShader.setUniformValue("view_pixel_size", 1.0f / client.getFramebuffer().viewportWidth, 1.0f / client.getFramebuffer().viewportHeight);
         motionBlurShader.setUniformValue("motionBlurSamples", sampleAmount);
-        motionBlurShader.setUniformValue("halfSamples", halfSampleAmount);
-        motionBlurShader.setUniformValue("inverseSamples", invSamples);
         motionBlurShader.setUniformValue("blurAlgorithm", config.blurAlgorithm.ordinal());
 
         // Render the shader effect
         motionBlurShader.render(deltaTick); // SatinAPI's render method expects deltaTick
-    }
-
-    // Determine sample amount based on FPS
-    private static int getSampleAmountForFPS(float fps) {
-        if (fps > 360) return 8;
-        else if (fps > 120) return 10;
-        else if (fps > 60) return 12;
-        else return 20;
     }
 
     private static final Matrix4f tempModelView = new Matrix4f();

@@ -3,7 +3,6 @@
 uniform sampler2D MainSampler;
 uniform sampler2D MainDepthSampler;
 uniform float BlendFactor;
-uniform float inverseSamples;
 uniform vec3 cameraPos;
 uniform vec3 prevCameraPos;
 uniform vec2 view_res;
@@ -11,9 +10,8 @@ uniform mat4 mvInverse;
 uniform mat4 projInverse;
 uniform mat4 prevModelView;
 uniform mat4 prevProjection;
-uniform int motionBlurSamples;
-uniform int halfSamples;
 uniform int blurAlgorithm;
+uniform int motionBlurSamples;
 in vec2 texCoord;
 layout(location = 0) out vec4 color;
 
@@ -46,25 +44,31 @@ void main() {
     vec2 velocity = texCoord - reproject(vec3(texCoord, depth)).xy;
     velocity = clampLength(velocity);
 
+    float speed = length(velocity);
+    int dynamicSamples = int(ceil(speed * float(motionBlurSamples)));
+    dynamicSamples = clamp(dynamicSamples, 1, motionBlurSamples);
+    if (dynamicSamples % 2 != 0) {
+        dynamicSamples += 1;
+    }
+    int halfSamples = dynamicSamples / 2;
+
     vec2 totalOffset = BlendFactor * velocity;
-    vec2 baseStep = totalOffset * inverseSamples;
+    vec2 baseStep = totalOffset / float(dynamicSamples);
 
     vec3 color_sum = vec3(0.0);
     vec2 seed = texCoord * view_res;
 
     bool centerBlur = blurAlgorithm != 0;
-    for (int i = 0; i < motionBlurSamples; ++i) {
+    for (int i = 0; i < dynamicSamples; ++i) {
         float fi = float(i);
 
         float jitter = noise(seed + vec2(fi, fi * 1.4));
-        float offset_centered = fi - halfSamples;
-        float sample_index = centerBlur ? offset_centered : fi;
-        float sample_offset = sample_index + jitter;
+        float sample_offset = fi - halfSamples + jitter;
 
         vec2 pos = texCoord + sample_offset * baseStep;
         vec3 color = texture(MainSampler, pos).rgb;
 
         color_sum += color * color;
     }
-    color = vec4(sqrt(color_sum * inverseSamples), 1.0);
+    color = vec4(sqrt(color_sum / float(dynamicSamples)), 1.0);
 }
