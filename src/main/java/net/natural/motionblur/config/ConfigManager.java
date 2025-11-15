@@ -61,6 +61,16 @@ public class ConfigManager {
                 .setSaveConsumer(newValue -> cfg.useRefreshRateScaling = newValue)
                 .build());
 
+        // Use Depth-Based Blur (compat toggle)
+        general.addEntry(entryBuilder.startBooleanToggle(Text.literal("Use Depth-Based Blur"), cfg.useDepthBasedBlur)
+                .setDefaultValue(true)
+                .setTooltip(Text.literal(
+                        "If enabled, the mod will use depth information for movement blur.\n" +
+                                "When disabled, only mouse movement will be blurred. This can improve compatibility with some mods."
+                ))
+                .setSaveConsumer(newValue -> cfg.useDepthBasedBlur = newValue)
+                .build());
+
         // Motion Blur Strength
         general.addEntry(entryBuilder.startFloatField(Text.literal("Motion Blur Strength"), cfg.motionBlurStrength)
                 .setDefaultValue(1.0F)
@@ -159,6 +169,22 @@ public class ConfigManager {
                     } catch (Exception e) {
                         config.useRefreshRateScaling = true;
                         errorMessages.add("Refresh rate scaling option of mod \"Natural Motion Blur\" was invalid and has been reset to default (enabled).");
+                        configModified = true;
+                    }
+                }
+
+                // Process useDepthBasedBlur
+                if (configJson.has("useDepthBasedBlur")) {
+                    try {
+                        String val = configJson.get("useDepthBasedBlur").getAsString();
+                        if ("true".equalsIgnoreCase(val) || "false".equalsIgnoreCase(val)) {
+                            config.useDepthBasedBlur = Boolean.parseBoolean(val);
+                        } else {
+                            throw new IllegalArgumentException();
+                        }
+                    } catch (Exception e) {
+                        config.useDepthBasedBlur = true;
+                        errorMessages.add("Toggle option of \"Use Depth-Based Blur\" was invalid and has been reset to default (enabled).");
                         configModified = true;
                     }
                 }

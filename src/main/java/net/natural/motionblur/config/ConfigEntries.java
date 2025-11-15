@@ -9,6 +9,7 @@ public class ConfigEntries {
     public boolean renderF5 = true;
     public boolean enabled = true;
     public boolean useRefreshRateScaling = true;
+    public boolean useDepthBasedBlur = true;
     public String toggleKey = "key.keyboard.v";
 
     public InputUtil.Key getToggleKey() {

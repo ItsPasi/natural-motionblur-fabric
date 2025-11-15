@@ -91,6 +91,7 @@ public class ShaderManager {
         motionBlurShader.setUniformValue("view_pixel_size", 1.0f / client.getFramebuffer().viewportWidth, 1.0f / client.getFramebuffer().viewportHeight);
         motionBlurShader.setUniformValue("motionBlurSamples", sampleAmount);
         motionBlurShader.setUniformValue("blurAlgorithm", config.blurAlgorithm.ordinal());
+        motionBlurShader.setUniformValue("useDepth", config.useDepthBasedBlur ? 1 : 0);
 
         // Render the shader effect
         motionBlurShader.render(deltaTick); // SatinAPI's render method expects deltaTick
