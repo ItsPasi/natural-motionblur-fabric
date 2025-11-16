@@ -69,7 +69,7 @@ public class ShaderManager {
         // Scale blur based on FPS vs refresh rate
         float baseStrength = config.motionBlurStrength;
         float scaledStrength = baseStrength;
-        if (config.useRefreshRateScaling) {
+        if (config.refreshRateScaling) {
             float fpsOverRefresh = (displayRefreshRate > 0) ? currentFPS / displayRefreshRate : 1.0f;
             if (fpsOverRefresh < 1.0f) fpsOverRefresh = 1.0f; // don't weaken blur under refresh rate
             scaledStrength = baseStrength * fpsOverRefresh;
@@ -91,7 +91,7 @@ public class ShaderManager {
         motionBlurShader.setUniformValue("view_pixel_size", 1.0f / client.getFramebuffer().viewportWidth, 1.0f / client.getFramebuffer().viewportHeight);
         motionBlurShader.setUniformValue("motionBlurSamples", sampleAmount);
         motionBlurShader.setUniformValue("blurAlgorithm", config.blurAlgorithm.ordinal());
-        motionBlurShader.setUniformValue("useDepth", config.useDepthBlur ? 1 : 0);
+        motionBlurShader.setUniformValue("useDepth", config.depthBlur ? 1 : 0);
 
         // Render the shader effect
         motionBlurShader.render(deltaTick); // SatinAPI's render method expects deltaTick

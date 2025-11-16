@@ -46,7 +46,7 @@ void main() {
     velocity = clampLength(velocity);
 
     float speed = length(velocity);
-    int dynamicSamples = clamp(int(ceil(speed * float(motionBlurSamples))), 1, motionBlurSamples);
+    int dynamicSamples = clamp(int(ceil(speed * float(motionBlurSamples))), 4, motionBlurSamples);
 
     vec2 baseStep = (BlendFactor * velocity) / float(dynamicSamples);
     vec3 color_sum = vec3(0.0);
