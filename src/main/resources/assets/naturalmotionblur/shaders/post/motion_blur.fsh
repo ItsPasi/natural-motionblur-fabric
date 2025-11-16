@@ -42,7 +42,7 @@ void main() {
     ivec2 texel = ivec2(gl_FragCoord.xy);
 
     float depth = texelFetch(MainDepthSampler, texel, 0).x;
-    vec2 velocity = texCoord - reproject(vec3(texCoord, useDepth == 1 ? depth : 1.0)).xy;
+    vec2 velocity = texCoord - reproject(vec3(texCoord, useDepth == 1 ? depth : 1.0)).xy; //velocity calculation and whether to use depth information or not
     velocity = clampLength(velocity);
 
     float speed = length(velocity);

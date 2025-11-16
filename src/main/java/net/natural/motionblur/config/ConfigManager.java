@@ -61,14 +61,14 @@ public class ConfigManager {
                 .setSaveConsumer(newValue -> cfg.useRefreshRateScaling = newValue)
                 .build());
 
-        // Use Depth-Based Blur (compat toggle)
-        general.addEntry(entryBuilder.startBooleanToggle(Text.literal("Use Depth-Based Blur"), cfg.useDepthBasedBlur)
+        // Use Depth Blur (compat toggle)
+        general.addEntry(entryBuilder.startBooleanToggle(Text.literal("Use Depth Blur"), cfg.useDepthBlur)
                 .setDefaultValue(true)
                 .setTooltip(Text.literal(
                         "If enabled, the mod will use depth information for movement blur.\n" +
                                 "When disabled, only mouse movement will be blurred. This can improve compatibility with some mods."
                 ))
-                .setSaveConsumer(newValue -> cfg.useDepthBasedBlur = newValue)
+                .setSaveConsumer(newValue -> cfg.useDepthBlur = newValue)
                 .build());
 
         // Motion Blur Strength
@@ -173,18 +173,18 @@ public class ConfigManager {
                     }
                 }
 
-                // Process useDepthBasedBlur
-                if (configJson.has("useDepthBasedBlur")) {
+                // Process useDepthBlur
+                if (configJson.has("useDepthBlur")) {
                     try {
-                        String val = configJson.get("useDepthBasedBlur").getAsString();
+                        String val = configJson.get("useDepthBlur").getAsString();
                         if ("true".equalsIgnoreCase(val) || "false".equalsIgnoreCase(val)) {
-                            config.useDepthBasedBlur = Boolean.parseBoolean(val);
+                            config.useDepthBlur = Boolean.parseBoolean(val);
                         } else {
                             throw new IllegalArgumentException();
                         }
                     } catch (Exception e) {
-                        config.useDepthBasedBlur = true;
-                        errorMessages.add("Toggle option of \"Use Depth-Based Blur\" was invalid and has been reset to default (enabled).");
+                        config.useDepthBlur = true;
+                        errorMessages.add("Toggle option of \"Use Depth Blur\" was invalid and has been reset to default (enabled).");
                         configModified = true;
                     }
                 }
