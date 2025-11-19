@@ -1,11 +1,12 @@
 package net.natural.motionblur;
 
+import net.fabricmc.fabric.api.client.rendering.v1.WorldRenderContext;
+import net.fabricmc.fabric.api.client.rendering.v1.WorldRenderEvents;
 import net.minecraft.client.MinecraftClient;
 import net.natural.motionblur.config.ConfigManager;
 import net.natural.motionblur.config.ConfigEntries;
 import org.joml.Matrix4f;
 import org.joml.Vector3f;
-import org.ladysnake.satin.api.event.PostWorldRenderCallbackV2;
 import org.ladysnake.satin.api.managed.ManagedShaderEffect;
 import org.ladysnake.satin.api.managed.ShaderEffectManager;
 
@@ -13,6 +14,7 @@ public class ShaderManager {
     private static long lastNano;
     private static float currentBlur = 0.0f;
     private static float currentFPS = 0.0f;
+    private static int sampleAmount = 100;
 
     private static final ManagedShaderEffect motionBlurShader = ShaderEffectManager.getInstance().manage(
             NaturalMotionBlurMod.createIdentifier("shaders/post/motion_blur.json"),
@@ -21,19 +23,21 @@ public class ShaderManager {
 
     // Render Layer Hook
     public static void registerShaderCallbacks() {
-        PostWorldRenderCallbackV2.EVENT.register((matrix, camera, deltaTick) -> {
+        WorldRenderEvents.END.register((WorldRenderContext ctx) -> {
             long now = System.nanoTime();
             float deltaTime = (now - lastNano) / 1_000_000_000.0f;
+            float deltaTick = deltaTime * 20.0f;
             lastNano = now;
 
-            if (deltaTime > 0) {
+            // FPS calculation
+            if (deltaTime > 0 && deltaTime < 1.0f) {
                 currentFPS = 1.0f / deltaTime;
             } else {
                 currentFPS = 0.0f; // Avoid division by zero
             }
 
             if (shouldRenderMotionBlur()) {
-                renderMotionBlur(deltaTick);
+                applyMotionBlur(deltaTick);
             }
         });
     }
@@ -54,39 +58,43 @@ public class ShaderManager {
         return client.options.getPerspective().isFirstPerson() || config.renderF5;
     }
 
-    private static void renderMotionBlur(float deltaTick) {
+    private static void applyMotionBlur(float deltaTick) {
         ConfigEntries config = ConfigManager.getConfig();
         MinecraftClient client = MinecraftClient.getInstance();
 
-        // Update strength if changed
-        if (currentBlur != config.motionBlurStrength) {
-            motionBlurShader.setUniformValue("BlendFactor", config.motionBlurStrength);
-            currentBlur = config.motionBlurStrength;
+        // Detect refresh rate on first use
+        MonitorInfoProvider.updateDisplayInfo();
+        int displayRefreshRate = MonitorInfoProvider.getRefreshRate();
+
+        // Scale blur based on FPS vs refresh rate
+        float baseStrength = config.motionBlurStrength;
+        float scaledStrength = baseStrength;
+        if (config.refreshRateScaling) {
+            float fpsOverRefresh = (displayRefreshRate > 0) ? currentFPS / displayRefreshRate : 1.0f;
+            if (fpsOverRefresh < 1.0f) fpsOverRefresh = 1.0f; // don't weaken blur under refresh rate
+            scaledStrength = baseStrength * fpsOverRefresh;
+
+            // Scale sample amount proportionally when FPS exceeds refresh rate
+            if (fpsOverRefresh > 1.0f) {
+                sampleAmount = (int) (100 * fpsOverRefresh);
+            }
         }
 
-        // Determine sample amount based on FPS
-        int sampleAmount = getSampleAmountForFPS(currentFPS);
-        int halfSampleAmount = sampleAmount / 2;
-        float invSamples = 1.0f / sampleAmount;
+        // Update strength if changed
+        if (currentBlur != scaledStrength) {
+            motionBlurShader.setUniformValue("BlendFactor", scaledStrength);
+            currentBlur = scaledStrength;
+        }
 
         // Set uniform values for the shader
         motionBlurShader.setUniformValue("view_res", (float) client.getFramebuffer().viewportWidth, (float) client.getFramebuffer().viewportHeight);
         motionBlurShader.setUniformValue("view_pixel_size", 1.0f / client.getFramebuffer().viewportWidth, 1.0f / client.getFramebuffer().viewportHeight);
         motionBlurShader.setUniformValue("motionBlurSamples", sampleAmount);
-        motionBlurShader.setUniformValue("halfSamples", halfSampleAmount);
-        motionBlurShader.setUniformValue("inverseSamples", invSamples);
         motionBlurShader.setUniformValue("blurAlgorithm", config.blurAlgorithm.ordinal());
+        motionBlurShader.setUniformValue("useDepth", config.depthBlur ? 1 : 0);
 
         // Render the shader effect
         motionBlurShader.render(deltaTick); // SatinAPI's render method expects deltaTick
-    }
-
-    // Determine sample amount based on FPS
-    private static int getSampleAmountForFPS(float fps) {
-        if (fps > 360) {return 8;}
-        else if (fps > 120) {return 10;}
-        else if (fps > 60) {return 12;}
-        else {return 20;}
     }
 
     public static void setFrameMotionBlur(Matrix4f modelView, Matrix4f prevModelView,

@@ -8,6 +8,7 @@ import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.util.InputUtil;
 import net.minecraft.text.Text;
+import net.minecraft.util.Formatting;
 import org.apache.commons.io.FileUtils;
 
 import java.io.File;
@@ -53,6 +54,26 @@ public class ConfigManager {
                 .setSaveConsumer(newValue -> cfg.renderF5 = newValue)
                 .build());
 
+        // Use Refresh Rate Scaling
+        general.addEntry(entryBuilder.startBooleanToggle(Text.literal("Use Refresh Rate Scaling"), cfg.refreshRateScaling)
+                .setDefaultValue(true)
+                .setTooltip(Text.literal("If enabled, motion blur strength will adjust automatically based on FPS relative to your display's refresh rate.\n" +
+                        "When disabled, the blur strength is fixed to the set value."))
+                .setSaveConsumer(newValue -> cfg.refreshRateScaling = newValue)
+                .build());
+
+        // Use Depth Blur (compat toggle)
+        general.addEntry(entryBuilder.startBooleanToggle(Text.literal("Use Depth Blur"), cfg.depthBlur)
+                .setDefaultValue(true)
+                .setTooltip(
+                        Text.literal("If enabled, the mod will use depth information for movement blur.\n" +
+                                        "When disabled, only mouse movement will be blurred. \n\n" +
+                                        "This setting is incompatible with ").append(Text.literal("Fabulous!").formatted(Formatting.ITALIC)).append(" graphics. Depth blur will not work regardless of this setting.")
+                )
+
+                .setSaveConsumer(newValue -> cfg.depthBlur = newValue)
+                .build());
+
         // Motion Blur Strength
         general.addEntry(entryBuilder.startFloatField(Text.literal("Motion Blur Strength"), cfg.motionBlurStrength)
                 .setDefaultValue(1.0F)
@@ -77,7 +98,7 @@ public class ConfigManager {
 
         // Toggle Key
         general.addEntry(entryBuilder.startKeyCodeField(Text.literal("Toggle Key"), cfg.getToggleKey())
-                .setDefaultValue(ModifierKeyCode.of(InputUtil.fromTranslationKey("key.keyboard.v"), Modifier.none()))
+                .setDefaultValue(ModifierKeyCode.of(InputUtil.fromTranslationKey("key.keyboard.b"), Modifier.none()))
                 .setKeySaveConsumer(newValue -> {
                     cfg.setToggleKey(newValue);
                     KeybindingManager.updateKeybinding();
@@ -139,6 +160,38 @@ public class ConfigManager {
                     }
                 }
 
+                // Process refreshRateScaling
+                if (configJson.has("refreshRateScaling")) {
+                    try {
+                        String scalingValue = configJson.get("refreshRateScaling").getAsString();
+                        if ("true".equalsIgnoreCase(scalingValue) || "false".equalsIgnoreCase(scalingValue)) {
+                            config.refreshRateScaling = Boolean.parseBoolean(scalingValue);
+                        } else {
+                            throw new IllegalArgumentException();
+                        }
+                    } catch (Exception e) {
+                        config.refreshRateScaling = true;
+                        errorMessages.add("Refresh rate scaling option of mod \"Natural Motion Blur\" was invalid and has been reset to default (enabled).");
+                        configModified = true;
+                    }
+                }
+
+                // Process depthBlur
+                if (configJson.has("depthBlur")) {
+                    try {
+                        String val = configJson.get("depthBlur").getAsString();
+                        if ("true".equalsIgnoreCase(val) || "false".equalsIgnoreCase(val)) {
+                            config.depthBlur = Boolean.parseBoolean(val);
+                        } else {
+                            throw new IllegalArgumentException();
+                        }
+                    } catch (Exception e) {
+                        config.depthBlur = true;
+                        errorMessages.add("Toggle option of \"Use Depth Blur\" was invalid and has been reset to default (enabled).");
+                        configModified = true;
+                    }
+                }
+
                 // Process motionBlurStrength
                 if (configJson.has("motionBlurStrength")) {
                     try {
@@ -176,7 +229,7 @@ public class ConfigManager {
                         }
                         config.setToggleKey(parsedKey);
                     } catch (Exception e) {
-                        config.setToggleKey(InputUtil.fromTranslationKey("key.keyboard.v"));
+                        config.setToggleKey(InputUtil.fromTranslationKey("key.keyboard.b"));
                         errorMessages.add("Toggle key of mod \"Natural Motion Blur\" was invalid and has been reset to default (V).");
                         configModified = true;
                     }
