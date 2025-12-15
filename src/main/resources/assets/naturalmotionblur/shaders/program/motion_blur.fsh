@@ -3,7 +3,6 @@
 uniform sampler2D DiffuseSampler;
 uniform sampler2D DiffuseDepthSampler;
 uniform float BlendFactor;
-uniform float inverseSamples;
 uniform vec3 cameraPos;
 uniform vec3 prevCameraPos;
 uniform vec2 view_res;
@@ -11,39 +10,28 @@ uniform mat4 mvInverse;
 uniform mat4 projInverse;
 uniform mat4 prevModelView;
 uniform mat4 prevProjection;
-uniform int motionBlurSamples;
-uniform int halfSamples;
 uniform int blurAlgorithm;
+uniform int useDepth;
+uniform int motionBlurSamples;
 in vec2 texCoord;
 layout(location = 0) out vec4 color;
 
 #define rcp(x) (1.0 / (x))
 
-vec3 transform(mat4 m, vec3 pos) {
-    return (m * vec4(pos, 1.0)).xyz;
-}
-
-vec3 project_and_divide(mat4 m, vec3 pos) {
-    vec4 h = m * vec4(pos, 1.0);
-    return h.xyz * rcp(h.w);
-}
-
-vec3 screen_to_scene_space(vec3 screen_pos) {
-    vec3 ndc = screen_pos * 2.0 - 1.0;
-    vec3 view_pos = project_and_divide(projInverse, ndc);
-    return transform(mvInverse, view_pos);
-}
-
 vec3 reproject(vec3 screen_pos) {
-    vec3 scene_pos = screen_to_scene_space(screen_pos);
-    vec3 prev_pos = transform(prevModelView, scene_pos + (cameraPos - prevCameraPos));
-    prev_pos = project_and_divide(prevProjection, prev_pos);
-    return prev_pos * 0.5 + 0.5;
+    vec3 ndc = screen_pos * 2.0 - 1.0;
+    vec4 view_pos4 = projInverse * vec4(ndc, 1.0);
+    vec3 view_pos = view_pos4.xyz / view_pos4.w;
+
+    vec3 world_pos = (mvInverse * vec4(view_pos, 1.0)).xyz + (cameraPos - prevCameraPos);
+    vec4 prev_proj = prevProjection * (prevModelView * vec4(world_pos, 1.0));
+
+    return (prev_proj.xyz / prev_proj.w) * 0.5 + 0.5;
 }
 
 vec2 clampLength(vec2 velocity) {
-    float len = length(velocity);
-    return (len > 0.4) ? velocity * (0.4 / len) : velocity;
+    float lenSq = dot(velocity, velocity);
+    return (lenSq > 0.16) ? velocity * (0.4 * inversesqrt(lenSq)) : velocity;
 }
 
 float noise(vec2 pos) {
@@ -54,27 +42,26 @@ void main() {
     ivec2 texel = ivec2(gl_FragCoord.xy);
 
     float depth = texelFetch(DiffuseDepthSampler, texel, 0).x;
-    vec2 velocity = texCoord - reproject(vec3(texCoord, depth)).xy;
+    depth = (depth <= 0.6) ? 1.0 : depth; //fix for fabulous graphics option
+    vec2 velocity = texCoord - reproject(vec3(texCoord, useDepth == 1 ? depth : 1.0)).xy; //velocity calculation and whether to use depth information or not
     velocity = clampLength(velocity);
 
-    vec2 totalOffset = BlendFactor * velocity;
-    vec2 baseStep = totalOffset * inverseSamples;
+    float speed = length(velocity);
+    int dynamicSamples = clamp(int(ceil(speed * float(motionBlurSamples))), 4, motionBlurSamples);
 
+    vec2 baseStep = (BlendFactor * velocity) / float(dynamicSamples);
     vec3 color_sum = vec3(0.0);
     vec2 seed = texCoord * view_res;
+    float centerOffset = blurAlgorithm == 0 ? 0.0 : -(float(dynamicSamples) * 0.5); //logic for centered blur
 
-    for (int i = 0; i < motionBlurSamples; ++i) {
+    for (int i = 0; i < dynamicSamples; ++i) {
         float fi = float(i);
 
         float jitter = noise(seed + vec2(fi, fi * 1.4));
-        float offset_centered = fi - halfSamples;
-        float sample_index = blurAlgorithm == 0 ? fi : offset_centered;
-        float sample_offset = sample_index + jitter;
-
-        vec2 pos = texCoord + sample_offset * baseStep;
+        vec2 pos = texCoord + (fi + centerOffset + jitter) * baseStep;
         vec3 color = texture(DiffuseSampler, pos).rgb;
 
         color_sum += color * color;
     }
-    color = vec4(sqrt(color_sum * inverseSamples), 1.0);
+    color = vec4(sqrt(color_sum / float(dynamicSamples)), 1.0);
 }
