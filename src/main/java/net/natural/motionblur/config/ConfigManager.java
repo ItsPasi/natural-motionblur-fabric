@@ -8,6 +8,7 @@ import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.util.InputUtil;
 import net.minecraft.text.Text;
+import net.minecraft.util.Formatting;
 import org.apache.commons.io.FileUtils;
 
 import java.io.File;
@@ -61,13 +62,12 @@ public class ConfigManager {
                 .setSaveConsumer(newValue -> cfg.refreshRateScaling = newValue)
                 .build());
 
-        // Use Depth Blur (compat toggle)
+        // Use Depth Blur
         general.addEntry(entryBuilder.startBooleanToggle(Text.literal("Use Depth Blur"), cfg.depthBlur)
                 .setDefaultValue(true)
-                .setTooltip(Text.literal(
-                        "If enabled, the mod will use depth information for movement blur.\n" +
-                                "When disabled, only mouse movement will be blurred. This can improve compatibility with some mods."
-                ))
+                .setTooltip(Text.literal("If enabled, the mod will use depth information for movement blur.\n" +
+                        "When disabled, only mouse movement will be blurred. \n\n" +
+                        "This setting is incompatible with ").append(Text.literal("Fabulous!").formatted(Formatting.ITALIC)).append(" graphics. Depth blur will not work regardless of this setting."))
                 .setSaveConsumer(newValue -> cfg.depthBlur = newValue)
                 .build());
 
