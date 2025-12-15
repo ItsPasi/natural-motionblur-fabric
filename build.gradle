@@ -1,8 +1,16 @@
 plugins {
-	id 'fabric-loom' version '1.13-SNAPSHOT'
+	id 'fabric-loom' version '1.14-SNAPSHOT'
 	id 'io.github.juuxel.loom-quiltflower' version '1.7.2'
 }
 
+base {
+	archivesName = "naturalmotionblur"
+}
+
+String getVersion() {
+	String version = "${project.mod_version}+mc${project.minecraft_version}"
+	return version
+}
 version = getVersion()
 group = project.maven_group
 
@@ -87,7 +95,7 @@ java {
 
 jar {
 	from("LICENSE") {
-		rename { "${it}_${project.archivesBaseName}"}
+		rename { "${it}_${base.archivesName.get()}" }
 	}
 }
 
@@ -97,9 +105,3 @@ jar {
         // The repositories here will be used for publishing your artifact, not for
         // retrieving dependencies.
     }
-
-String getVersion() {
-	String version = "${project.mod_version}+mc${project.minecraft_version}"
-
-	return version
-}
