@@ -62,7 +62,7 @@ public class ConfigManager {
                 .setSaveConsumer(newValue -> cfg.refreshRateScaling = newValue)
                 .build());
 
-        // Use Depth Blur (compat toggle)
+        // Use Depth Blur
         general.addEntry(entryBuilder.startBooleanToggle(Text.literal("Use Depth Blur"), cfg.depthBlur)
                 .setDefaultValue(true)
                 .setTooltip(
