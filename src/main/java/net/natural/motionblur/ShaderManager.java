@@ -49,10 +49,6 @@ public class ShaderManager {
         if (config.motionBlurStrength == 0 || !config.enabled) {
             return false;
         }
-        // Iris enabled?
-        if (!IrisCheck.checkIrisShouldDisable()) {
-            return false;
-        }
         // F5 enabled?
         MinecraftClient client = MinecraftClient.getInstance();
         return client.options.getPerspective().isFirstPerson() || config.renderF5;
