@@ -49,10 +49,6 @@ public class ShaderManager {
         if (config.motionBlurStrength == 0 || !config.enabled) {
             return false;
         }
-        // Iris enabled?
-        if (!IrisCheck.checkIrisShouldDisable()) {
-            return false;
-        }
         // F5 enabled?
         MinecraftClient client = MinecraftClient.getInstance();
         return client.options.getPerspective().isFirstPerson() || config.renderF5;
@@ -85,13 +81,16 @@ public class ShaderManager {
             motionBlurShader.setUniformValue("BlendFactor", scaledStrength);
             currentBlur = scaledStrength;
         }
+        // Disable depth when Iris shaders are enabled
+        boolean irisActive = IrisCheck.checkIrisShouldDisable();
+        boolean effectiveDepthBlur = config.depthBlur && irisActive;
 
         // Set uniform values for the shader
         motionBlurShader.setUniformValue("view_res", (float) client.getFramebuffer().viewportWidth, (float) client.getFramebuffer().viewportHeight);
         motionBlurShader.setUniformValue("view_pixel_size", 1.0f / client.getFramebuffer().viewportWidth, 1.0f / client.getFramebuffer().viewportHeight);
         motionBlurShader.setUniformValue("motionBlurSamples", sampleAmount);
         motionBlurShader.setUniformValue("blurAlgorithm", config.blurAlgorithm.ordinal());
-        motionBlurShader.setUniformValue("useDepth", config.depthBlur ? 1 : 0);
+        motionBlurShader.setUniformValue("useDepth", effectiveDepthBlur ? 1 : 0);
 
         // Render the shader effect
         motionBlurShader.render(deltaTick); // SatinAPI's render method expects deltaTick
