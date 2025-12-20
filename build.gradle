@@ -44,10 +44,6 @@ repositories {
 	flatDir {
 		dirs 'libs'
 	}
-	maven {
-		url = 'https://maven.irisshaders.net/'
-	}
-
 }
 
 dependencies {
