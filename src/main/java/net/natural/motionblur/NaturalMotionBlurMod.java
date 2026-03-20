@@ -1,7 +1,6 @@
 package net.natural.motionblur;
 
 import net.fabricmc.api.ClientModInitializer;
-import net.minecraft.util.Identifier;
 import net.natural.motionblur.config.CommandManager;
 import net.natural.motionblur.config.ConfigManager;
 import net.natural.motionblur.config.EventManager;
@@ -15,11 +14,6 @@ public class NaturalMotionBlurMod implements ClientModInitializer {
         ConfigManager.loadConfig();
         KeybindingManager.registerKeybindings();
         CommandManager.registerCommands();
-        ShaderManager.registerShaderCallbacks();
         EventManager.registerEvents();
-    }
-
-    public static Identifier createIdentifier(String path) {
-        return Identifier.of(ID, path);
     }
 }

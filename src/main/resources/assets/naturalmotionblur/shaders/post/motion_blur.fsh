@@ -1,29 +1,32 @@
-#version 330 core
+#version 330
 
 uniform sampler2D MainSampler;
 uniform sampler2D MainDepthSampler;
-uniform float BlendFactor;
-uniform vec3 cameraPos;
-uniform vec3 prevCameraPos;
-uniform vec2 view_res;
-uniform mat4 mvInverse;
-uniform mat4 projInverse;
-uniform mat4 prevModelView;
-uniform mat4 prevProjection;
-uniform int blurAlgorithm;
-uniform int useDepth;
-uniform int motionBlurSamples;
+
+layout(std140) uniform MotionBlurUniforms {
+    mat4 mvInverse;
+    mat4 projInverse;
+    mat4 prevModelView;
+    mat4 prevProjection;
+    vec3 cameraDelta;
+    vec2 view_res;
+    float BlendFactor;
+    float inverseSamples;
+    int motionBlurSamples;
+    int halfSamples;
+    int blurAlgorithm;
+    int useDepth;
+};
+
 in vec2 texCoord;
 layout(location = 0) out vec4 color;
-
-#define rcp(x) (1.0 / (x))
 
 vec3 reproject(vec3 screen_pos) {
     vec3 ndc = screen_pos * 2.0 - 1.0;
     vec4 view_pos4 = projInverse * vec4(ndc, 1.0);
     vec3 view_pos = view_pos4.xyz / view_pos4.w;
 
-    vec3 world_pos = (mvInverse * vec4(view_pos, 1.0)).xyz + (cameraPos - prevCameraPos);
+    vec3 world_pos = (mvInverse * vec4(view_pos, 1.0)).xyz + cameraDelta;
     vec4 prev_proj = prevProjection * (prevModelView * vec4(world_pos, 1.0));
 
     return (prev_proj.xyz / prev_proj.w) * 0.5 + 0.5;
@@ -42,6 +45,11 @@ void main() {
     ivec2 texel = ivec2(gl_FragCoord.xy);
 
     float depth = texelFetch(MainDepthSampler, texel, 0).x;
+    // Iris Hand Fix
+    if (depth < 0.56) {
+        color = texture(MainSampler, texCoord);
+        return;
+    }
     vec2 velocity = texCoord - reproject(vec3(texCoord, useDepth == 1 ? depth : 1.0)).xy; //velocity calculation and whether to use depth information or not
     velocity = clampLength(velocity);
 

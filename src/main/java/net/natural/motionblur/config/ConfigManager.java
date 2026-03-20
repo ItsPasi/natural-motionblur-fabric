@@ -65,9 +65,11 @@ public class ConfigManager {
         // Use Depth Blur
         general.addEntry(entryBuilder.startBooleanToggle(Text.literal("Use Depth Blur"), cfg.depthBlur)
                 .setDefaultValue(true)
-                .setTooltip(Text.literal("If enabled, the mod will use depth information for movement blur.\n" +
-                        "When disabled, only mouse movement will be blurred. \n\n" +
-                        "This setting is incompatible with ").append(Text.literal("Fabulous!").formatted(Formatting.ITALIC)).append(" graphics. Depth blur will not work regardless of this setting."))
+                .setTooltip(Text.literal("""
+                        If enabled, the mod will use depth information for movement blur.
+                        When disabled, only mouse movement will be blurred.\s
+                        
+                        This setting is incompatible with\s""").append(Text.literal("Fabulous!").formatted(Formatting.ITALIC)).append(" graphics. Depth blur will not work regardless of this setting."))
                 .setSaveConsumer(newValue -> cfg.depthBlur = newValue)
                 .build());
 
@@ -87,9 +89,11 @@ public class ConfigManager {
                         ConfigEntries.BlurAlgorithm.class,
                         cfg.blurAlgorithm)
                 .setDefaultValue(ConfigEntries.BlurAlgorithm.CENTERED)
-                .setTooltip(Text.literal("Changes the blur to either only blur frames behind player movement or in both directions. \n\n" +
-                        "BACKWARDS has better blur continuity (less gaps in the blur) but a slight increase in perceived input lag. \n" +
-                        "CENTERED has better visual uniformity (e.g. translucent objects) and no perceived increase in input lag."))
+                .setTooltip(Text.literal("""
+                        Changes the blur to either only blur frames behind player movement or in both directions.\s
+                        
+                        BACKWARDS has better blur continuity (less gaps in the blur) but a slight increase in perceived input lag.\s
+                        CENTERED has better visual uniformity (e.g. translucent objects) and no perceived increase in input lag."""))
                 .setSaveConsumer(newValue -> cfg.blurAlgorithm = newValue)
                 .build());
 

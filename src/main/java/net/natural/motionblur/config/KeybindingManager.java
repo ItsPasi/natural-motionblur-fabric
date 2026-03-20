@@ -12,7 +12,7 @@ public class KeybindingManager {
         toggleKeybinding = new KeyBinding(
                 Text.literal("Toggle Motion Blur").getString(),
                 ConfigManager.getConfig().getToggleKey().getCode(),
-                KeyBinding.MISC_CATEGORY);
+                KeyBinding.Category.MISC);
 
         // Register tick event to check for keybinding presses
         ClientTickEvents.START_CLIENT_TICK.register(client -> {

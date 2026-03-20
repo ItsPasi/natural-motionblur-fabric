@@ -2,10 +2,13 @@
   "required": true,
   "minVersion": "0.8",
   "package": "net.natural.motionblur.mixin",
-  "compatibilityLevel": "JAVA_8",
+  "compatibilityLevel": "JAVA_21",
   "mixins": [
-    "GameRendererInvoker",
-    "MixinLevelRenderer"
+    "MixinGameRenderer",
+    "MixinLevelRenderer",
+    "PostEffectPassAccessor",
+    "PostEffectProcessorAccessor",
+    "ShaderLoaderAccessor"
   ],
   "client": [],
   "injectors": {
