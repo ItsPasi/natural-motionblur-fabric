@@ -50,7 +50,15 @@ void main() {
         color = texture(MainSampler, texCoord);
         return;
     }
-    vec2 velocity = texCoord - reproject(vec3(texCoord, useDepth == 1 ? depth : 1.0)).xy; //velocity calculation and whether to use depth information or not
+    // Depth blend inconsistency fix
+    float dilatedDepth = depth;
+    for (int x = -1; x <= 1; x++) {
+        for (int y = -1; y <= 1; y++) {
+            float d = texelFetch(MainDepthSampler, texel + ivec2(x, y), 0).x;
+            dilatedDepth = min(dilatedDepth, d);
+        }
+    }
+    vec2 velocity = texCoord - reproject(vec3(texCoord, useDepth == 1 ? dilatedDepth : 1.0)).xy;
     velocity = clampLength(velocity);
 
     float speed = length(velocity);
