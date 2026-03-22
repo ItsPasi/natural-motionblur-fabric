@@ -29,6 +29,8 @@ public class MixinLevelRenderer {
             Matrix4f projectionMatrix, GpuBufferSlice fogBuffer,
             Vector4f fogColor, boolean renderSky, CallbackInfo ci) {
 
+        ShaderManager.captureAllocator(allocator);
+
         double cx = camera.getCameraPos().x;
         double cy = camera.getCameraPos().y;
         double cz = camera.getCameraPos().z;

@@ -37,8 +37,13 @@ public class ShaderManager {
     private static GpuBuffer motionBlurUBO = null;
     private static final int UBO_SIZE = 304;
     private static boolean loadErrorLogged = false;
+    private static PostEffectProcessor lastKnownProcessor = null; // Track processor identity to detect resource reloads (see replaceUniformBuffer)
+    private static ObjectAllocator frameAllocator = null; // Captured each frame by MixinLevelRenderer; reset after use
 
-    // Render Layer Hook
+    public static void captureAllocator(ObjectAllocator allocator) {
+        frameAllocator = allocator;
+    }
+
     public static void applyMotionBlur() {
         long now = System.nanoTime();
         float deltaTime = (now - lastNano) / 1_000_000_000.0f;
@@ -54,6 +59,7 @@ public class ShaderManager {
             if (shouldRenderMotionBlur()) {
                 applyMotionBlurInternal();
             }
+        frameAllocator = null;
     }
 
     // Checks if blur should be rendered
@@ -95,6 +101,8 @@ public class ShaderManager {
             currentBlur = scaledStrength;
         }
 
+        if (frameAllocator == null) return;
+
         PostEffectProcessor processor = getProcessor(client);
         if (processor == null) return;
 
@@ -105,7 +113,7 @@ public class ShaderManager {
                 config.depthBlur, config.blurAlgorithm.ordinal());
 
         // Render the shader effect
-        processor.render(client.getFramebuffer(), ObjectAllocator.TRIVIAL);
+        processor.render(client.getFramebuffer(), frameAllocator);
     }
 
     private static PostEffectProcessor getProcessor(MinecraftClient client) {
@@ -135,7 +143,12 @@ public class ShaderManager {
                 ((PostEffectPassAccessor) passes.getFirst()).getUniformBuffers();
         if (!uniformBuffers.containsKey("MotionBlurUniforms")) return;
 
-        // Create persistent UBO on first use — avoids per-frame GPU allocation
+        // Prevent Resource Reload Crash
+        if (processor != lastKnownProcessor) {
+            motionBlurUBO = null;
+            lastKnownProcessor = processor;
+        }
+
         if (motionBlurUBO == null) {
             motionBlurUBO = RenderSystem.getDevice().createBuffer(
                     () -> "naturalmotionblur:MotionBlurUniforms",
@@ -158,11 +171,11 @@ public class ShaderManager {
             builder.putVec3(camDX, camDY, camDZ);
             builder.putVec2(viewW, viewH);
             builder.putFloat(blendFactor);
-            builder.putFloat(1.0f / sampleAmount); // inverseSamples
-            builder.putInt(sampleAmount);                // motionBlurSamples
-            builder.putInt(sampleAmount / 2);      // halfSamples
-            builder.putInt(blurAlgorithm);               // blurAlgorithm
-            builder.putInt(useDepth ? 1 : 0);            // useDepth
+            builder.putFloat(1.0f / sampleAmount);
+            builder.putInt(sampleAmount);
+            builder.putInt(sampleAmount / 2);
+            builder.putInt(blurAlgorithm);
+            builder.putInt(useDepth ? 1 : 0);
         }
     }
 
