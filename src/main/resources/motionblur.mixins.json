@@ -6,8 +6,6 @@
   "mixins": [
     "MixinGameRenderer",
     "MixinLevelRenderer",
-    "PostEffectPassAccessor",
-    "PostEffectProcessorAccessor",
     "ShaderLoaderAccessor"
   ],
   "client": [],

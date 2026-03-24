@@ -1,13 +1,12 @@
 package net.natural.motionblur.mixin;
 
-import com.mojang.blaze3d.buffers.GpuBufferSlice;
 import net.minecraft.client.render.Camera;
+import net.minecraft.client.render.GameRenderer;
 import net.minecraft.client.render.RenderTickCounter;
 import net.minecraft.client.render.WorldRenderer;
 import net.minecraft.client.util.ObjectAllocator;
 import net.natural.motionblur.ShaderManager;
 import org.joml.Matrix4f;
-import org.joml.Vector4f;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
@@ -25,27 +24,25 @@ public class MixinLevelRenderer {
     private void onRenderHead(
             ObjectAllocator allocator, RenderTickCounter tickCounter,
             boolean renderBlockOutline, Camera camera,
-            Matrix4f positionMatrix, Matrix4f basicProjectionMatrix,
-            Matrix4f projectionMatrix, GpuBufferSlice fogBuffer,
-            Vector4f fogColor, boolean renderSky, CallbackInfo ci) {
+            GameRenderer gameRenderer,
+            Matrix4f positionMatrix, Matrix4f projectionMatrix,
+            CallbackInfo ci) {
 
         ShaderManager.captureAllocator(allocator);
 
-        double cx = camera.getCameraPos().x;
-        double cy = camera.getCameraPos().y;
-        double cz = camera.getCameraPos().z;
-
-        float dx = (float)(cx - prevCamX);
-        float dy = (float)(cy - prevCamY);
-        float dz = (float)(cz - prevCamZ);
+        double cx = camera.getPos().x;
+        double cy = camera.getPos().y;
+        double cz = camera.getPos().z;
 
         ShaderManager.setFrameMotionBlur(
-                positionMatrix,        prevModelView,
-                basicProjectionMatrix, prevProjection,
-                dx, dy, dz);
+                positionMatrix,   prevModelView,
+                projectionMatrix, prevProjection,
+                (float)(cx - prevCamX),
+                (float)(cy - prevCamY),
+                (float)(cz - prevCamZ));
 
         prevModelView.set(positionMatrix);
-        prevProjection.set(basicProjectionMatrix);
+        prevProjection.set(projectionMatrix);
         prevCamX = cx;
         prevCamY = cy;
         prevCamZ = cz;

@@ -3,20 +3,16 @@
 uniform sampler2D MainSampler;
 uniform sampler2D MainDepthSampler;
 
-layout(std140) uniform MotionBlurUniforms {
-    mat4 mvInverse;
-    mat4 projInverse;
-    mat4 prevModelView;
-    mat4 prevProjection;
-    vec3 cameraDelta;
-    vec2 view_res;
-    float BlendFactor;
-    float inverseSamples;
-    int motionBlurSamples;
-    int halfSamples;
-    int blurAlgorithm;
-    int useDepth;
-};
+uniform mat4 mvInverse;
+uniform mat4 projInverse;
+uniform mat4 prevModelView;
+uniform mat4 prevProjection;
+uniform vec3 cameraDelta;
+uniform vec2 view_res;
+uniform float BlendFactor;
+uniform int motionBlurSamples;
+uniform int blurAlgorithm;
+uniform int useDepth;
 
 in vec2 texCoord;
 layout(location = 0) out vec4 color;

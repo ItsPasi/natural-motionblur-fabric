@@ -20,9 +20,9 @@ public class MixinGameRenderer {
                             "Lnet/minecraft/client/util/ObjectAllocator;" +
                             "Lnet/minecraft/client/render/RenderTickCounter;" +
                             "ZLnet/minecraft/client/render/Camera;" +
-                            "Lorg/joml/Matrix4f;Lorg/joml/Matrix4f;Lorg/joml/Matrix4f;" +
-                            "Lcom/mojang/blaze3d/buffers/GpuBufferSlice;" +
-                            "Lorg/joml/Vector4f;Z)V",
+                            "Lnet/minecraft/client/render/GameRenderer;" +
+                            "Lorg/joml/Matrix4f;" +
+                            "Lorg/joml/Matrix4f;)V",
                     shift = At.Shift.AFTER
             )
     )
