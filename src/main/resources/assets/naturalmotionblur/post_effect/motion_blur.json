@@ -18,9 +18,7 @@
           { "name": "cameraDelta",       "type": "vec3",      "value": [0, 0, 0] },
           { "name": "view_res",          "type": "vec2",      "value": [1, 1] },
           { "name": "BlendFactor",       "type": "float",     "value": 0.5 },
-          { "name": "inverseSamples",    "type": "float",     "value": 0.01 },
           { "name": "motionBlurSamples", "type": "int",       "value": 100 },
-          { "name": "halfSamples",       "type": "int",       "value": 50 },
           { "name": "blurAlgorithm",     "type": "int",       "value": 1 },
           { "name": "useDepth",          "type": "int",       "value": 1 }
         ]

@@ -150,9 +150,7 @@ public class ShaderManager {
         }
 
         if (motionBlurUBO == null) {
-            motionBlurUBO = RenderSystem.getDevice().createBuffer(
-                    () -> "naturalmotionblur:MotionBlurUniforms",
-                    GpuBuffer.USAGE_UNIFORM | GpuBuffer.USAGE_MAP_WRITE, UBO_SIZE
+            motionBlurUBO = createBufferCompat(
             );
             GpuBuffer old = uniformBuffers.put("MotionBlurUniforms", motionBlurUBO);
             if (old != null) old.close();
@@ -171,12 +169,37 @@ public class ShaderManager {
             builder.putVec3(camDX, camDY, camDZ);
             builder.putVec2(viewW, viewH);
             builder.putFloat(blendFactor);
-            builder.putFloat(1.0f / sampleAmount);
             builder.putInt(sampleAmount);
-            builder.putInt(sampleAmount / 2);
             builder.putInt(blurAlgorithm);
             builder.putInt(useDepth ? 1 : 0);
         }
+    }
+
+    private static GpuBuffer createBufferCompat() {
+        Object device = RenderSystem.getDevice();
+        java.util.function.Supplier<String> name = () -> "naturalmotionblur:MotionBlurUniforms";
+
+        // 1.21.9: createBuffer(Supplier<String>, int, int)
+        try {
+            var m = device.getClass().getMethod(
+                    "createBuffer", java.util.function.Supplier.class, int.class, int.class);
+            return (GpuBuffer) m.invoke(device, name, 130, ShaderManager.UBO_SIZE);
+        } catch (NoSuchMethodException ignored) {
+        } catch (ReflectiveOperationException e) {
+            throw new RuntimeException("[NMB] createBuffer (1.21.9) failed", e);
+        }
+
+        // 1.21.11: createBuffer(Supplier<String>, int, long)
+        try {
+            var m = device.getClass().getMethod(
+                    "createBuffer", java.util.function.Supplier.class, int.class, long.class);
+            return (GpuBuffer) m.invoke(device, name, 130, (long) ShaderManager.UBO_SIZE);
+        } catch (NoSuchMethodException ignored) {
+        } catch (ReflectiveOperationException e) {
+            throw new RuntimeException("[NMB] createBuffer (1.21.11) failed", e);
+        }
+
+        throw new RuntimeException("[NMB] No compatible createBuffer found on " + device.getClass());
     }
 
     public static void setFrameMotionBlur(Matrix4f modelView, Matrix4f prevModelView,

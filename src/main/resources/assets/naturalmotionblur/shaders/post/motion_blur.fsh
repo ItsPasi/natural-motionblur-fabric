@@ -11,9 +11,7 @@ layout(std140) uniform MotionBlurUniforms {
     vec3 cameraDelta;
     vec2 view_res;
     float BlendFactor;
-    float inverseSamples;
     int motionBlurSamples;
-    int halfSamples;
     int blurAlgorithm;
     int useDepth;
 };
