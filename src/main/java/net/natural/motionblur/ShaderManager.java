@@ -171,9 +171,7 @@ public class ShaderManager {
             builder.putVec3(camDX, camDY, camDZ);
             builder.putVec2(viewW, viewH);
             builder.putFloat(blendFactor);
-            builder.putFloat(1.0f / sampleAmount);
             builder.putInt(sampleAmount);
-            builder.putInt(sampleAmount / 2);
             builder.putInt(blurAlgorithm);
             builder.putInt(useDepth ? 1 : 0);
         }

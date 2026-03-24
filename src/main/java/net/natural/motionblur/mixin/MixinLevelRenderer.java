@@ -25,9 +25,9 @@ public class MixinLevelRenderer {
     private void onRenderHead(
             ObjectAllocator allocator, RenderTickCounter tickCounter,
             boolean renderBlockOutline, Camera camera,
-            Matrix4f positionMatrix, Matrix4f basicProjectionMatrix,
-            Matrix4f projectionMatrix, GpuBufferSlice fogBuffer,
-            Vector4f fogColor, boolean renderSky, CallbackInfo ci) {
+            Matrix4f positionMatrix, Matrix4f projectionMatrix,
+            GpuBufferSlice fog, Vector4f fogColor, boolean shouldRenderSky,
+            CallbackInfo ci) {
 
         ShaderManager.captureAllocator(allocator);
 
@@ -40,12 +40,12 @@ public class MixinLevelRenderer {
         float dz = (float)(cz - prevCamZ);
 
         ShaderManager.setFrameMotionBlur(
-                positionMatrix,        prevModelView,
-                basicProjectionMatrix, prevProjection,
+                positionMatrix, prevModelView,
+                projectionMatrix, prevProjection,
                 dx, dy, dz);
 
         prevModelView.set(positionMatrix);
-        prevProjection.set(basicProjectionMatrix);
+        prevProjection.set(projectionMatrix);
         prevCamX = cx;
         prevCamY = cy;
         prevCamZ = cz;
