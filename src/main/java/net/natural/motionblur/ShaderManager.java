@@ -81,9 +81,7 @@ public class ShaderManager {
             motionBlurShader.setUniformValue("BlendFactor", scaledStrength);
             currentBlur = scaledStrength;
         }
-        // Disable depth when Iris shaders are enabled
-        boolean irisActive = IrisCheck.checkIrisShouldDisable();
-        boolean effectiveDepthBlur = config.depthBlur && irisActive;
+        boolean effectiveDepthBlur = config.depthBlur;
 
         // Set uniform values for the shader
         motionBlurShader.setUniformValue("view_res", (float) client.getFramebuffer().viewportWidth, (float) client.getFramebuffer().viewportHeight);
