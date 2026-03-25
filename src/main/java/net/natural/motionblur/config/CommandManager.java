@@ -3,8 +3,8 @@ package net.natural.motionblur.config;
 import com.mojang.brigadier.arguments.FloatArgumentType;
 import net.fabricmc.fabric.api.client.command.v2.ClientCommandManager;
 import net.fabricmc.fabric.api.client.command.v2.ClientCommandRegistrationCallback;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.text.Text;
+import net.minecraft.client.Minecraft;
+import net.minecraft.network.chat.Component;
 import net.natural.motionblur.ShaderManager;
 
 public class CommandManager {
@@ -31,9 +31,9 @@ public class CommandManager {
 
     private static int setMotionBlurStrength(float strength) {
         if (strength < -1000 || strength > 1000) {
-            assert MinecraftClient.getInstance().player != null;
-            MinecraftClient.getInstance().player.sendMessage(
-                    Text.literal("§cInvalid motion blur strength! Value must be under 1000."),
+            assert Minecraft.getInstance().player != null;
+            Minecraft.getInstance().player.displayClientMessage(
+                    Component.literal("§cInvalid motion blur strength! Value must be under 1000."),
                     false
             );
             return 0;
@@ -42,9 +42,9 @@ public class CommandManager {
         ConfigManager.getConfig().motionBlurStrength = strength;
         ConfigManager.saveConfig();
         ShaderManager.updateBlurStrength(strength);
-        assert MinecraftClient.getInstance().player != null;
-        MinecraftClient.getInstance().player.sendMessage(
-                Text.literal("Motion blur strength set to " + strength),
+        assert Minecraft.getInstance().player != null;
+        Minecraft.getInstance().player.displayClientMessage(
+                Component.literal("Motion blur strength set to " + strength),
                 false
         );
         return 1;

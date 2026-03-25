@@ -5,10 +5,10 @@ import com.google.gson.GsonBuilder;
 import com.google.gson.JsonObject;
 import me.shedaniel.clothconfig2.api.*;
 import net.fabricmc.loader.api.FabricLoader;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.util.InputUtil;
-import net.minecraft.text.Text;
-import net.minecraft.util.Formatting;
+import net.minecraft.client.Minecraft;
+import com.mojang.blaze3d.platform.InputConstants;
+import net.minecraft.network.chat.Component;
+import net.minecraft.ChatFormatting;
 import org.apache.commons.io.FileUtils;
 
 import java.io.File;
@@ -35,61 +35,61 @@ public class ConfigManager {
     public static void openConfigScreen() {
         ConfigBuilder builder = ConfigBuilder.create()
                 .setParentScreen(null)
-                .setTitle(Text.literal("Natural Motion Blur"));
+                .setTitle(Component.literal("Natural Motion Blur"));
 
-        ConfigCategory general = builder.getOrCreateCategory(Text.literal("Motion Blur Options"));
+        ConfigCategory general = builder.getOrCreateCategory(Component.literal("Motion Blur Options"));
         ConfigEntryBuilder entryBuilder = builder.entryBuilder();
         ConfigEntries cfg = getConfig();
 
         // Toggle Motion Blur
-        general.addEntry(entryBuilder.startBooleanToggle(Text.literal("Toggle Motion Blur"), cfg.enabled)
+        general.addEntry(entryBuilder.startBooleanToggle(Component.literal("Toggle Motion Blur"), cfg.enabled)
                 .setDefaultValue(true)
                 .setSaveConsumer(newValue -> cfg.enabled = newValue)
                 .build());
 
         // Third Person Rendering
-        general.addEntry(entryBuilder.startBooleanToggle(Text.literal("Third Person Rendering"), cfg.renderF5)
+        general.addEntry(entryBuilder.startBooleanToggle(Component.literal("Third Person Rendering"), cfg.renderF5)
                 .setDefaultValue(true)
-                .setTooltip(Text.literal("Decide whether the motion blur should be rendered in third person (F5) or not."))
+                .setTooltip(Component.literal("Decide whether the motion blur should be rendered in third person (F5) or not."))
                 .setSaveConsumer(newValue -> cfg.renderF5 = newValue)
                 .build());
 
         // Use Refresh Rate Scaling
-        general.addEntry(entryBuilder.startBooleanToggle(Text.literal("Use Refresh Rate Scaling"), cfg.refreshRateScaling)
+        general.addEntry(entryBuilder.startBooleanToggle(Component.literal("Use Refresh Rate Scaling"), cfg.refreshRateScaling)
                 .setDefaultValue(true)
-                .setTooltip(Text.literal("If enabled, motion blur strength will adjust automatically based on FPS relative to your display's refresh rate.\n" +
+                .setTooltip(Component.literal("If enabled, motion blur strength will adjust automatically based on FPS relative to your display's refresh rate.\n" +
                         "When disabled, the blur strength is fixed to the set value."))
                 .setSaveConsumer(newValue -> cfg.refreshRateScaling = newValue)
                 .build());
 
         // Use Depth Blur
-        general.addEntry(entryBuilder.startBooleanToggle(Text.literal("Use Depth Blur"), cfg.depthBlur)
+        general.addEntry(entryBuilder.startBooleanToggle(Component.literal("Use Depth Blur"), cfg.depthBlur)
                 .setDefaultValue(true)
-                .setTooltip(Text.literal("""
+                .setTooltip(Component.literal("""
                         If enabled, the mod will use depth information for movement blur.
                         When disabled, only mouse movement will be blurred.\s
                         
-                        This setting is incompatible with\s""").append(Text.literal("Fabulous!").formatted(Formatting.ITALIC)).append(" graphics. Depth blur will not work regardless of this setting."))
+                        This setting is incompatible with\s""").append(Component.literal("Fabulous!").withStyle(ChatFormatting.ITALIC)).append(" graphics. Depth blur will not work regardless of this setting."))
                 .setSaveConsumer(newValue -> cfg.depthBlur = newValue)
                 .build());
 
         // Motion Blur Strength
-        general.addEntry(entryBuilder.startFloatField(Text.literal("Motion Blur Strength"), cfg.motionBlurStrength)
+        general.addEntry(entryBuilder.startFloatField(Component.literal("Motion Blur Strength"), cfg.motionBlurStrength)
                 .setDefaultValue(1.0F)
                 .setMin(-1000)
                 .setMax(1000)
-                .setTooltip(Text.literal("Sets the intensity of the blur. \n" +
+                .setTooltip(Component.literal("Sets the intensity of the blur. \n" +
                         "Default setting (1.0) blurs frames ideally in correlation to the framerate."))
                 .setSaveConsumer(newValue -> cfg.motionBlurStrength = newValue)
                 .build());
 
         // Blur Algorithm
         general.addEntry(entryBuilder.startEnumSelector(
-                        Text.literal("Blur Algorithm"),
+                        Component.literal("Blur Algorithm"),
                         ConfigEntries.BlurAlgorithm.class,
                         cfg.blurAlgorithm)
                 .setDefaultValue(ConfigEntries.BlurAlgorithm.CENTERED)
-                .setTooltip(Text.literal("""
+                .setTooltip(Component.literal("""
                         Changes the blur to either only blur frames behind player movement or in both directions.\s
                         
                         BACKWARDS has better blur continuity (less gaps in the blur) but a slight increase in perceived input lag.\s
@@ -98,8 +98,8 @@ public class ConfigManager {
                 .build());
 
         // Toggle Key
-        general.addEntry(entryBuilder.startKeyCodeField(Text.literal("Toggle Key"), cfg.getToggleKey())
-                .setDefaultValue(ModifierKeyCode.of(InputUtil.fromTranslationKey("key.keyboard.b"), Modifier.none()))
+        general.addEntry(entryBuilder.startKeyCodeField(Component.literal("Toggle Key"), cfg.getToggleKey())
+                .setDefaultValue(ModifierKeyCode.of(InputConstants.getKey("key.keyboard.b"), Modifier.none()))
                 .setKeySaveConsumer(newValue -> {
                     cfg.setToggleKey(newValue);
                     KeybindingManager.updateKeybinding();
@@ -110,8 +110,8 @@ public class ConfigManager {
         builder.setSavingRunnable(ConfigManager::saveConfig);
 
         // Display the config screen
-        MinecraftClient.getInstance().send(() ->
-                MinecraftClient.getInstance().setScreen(builder.build())
+        Minecraft.getInstance().schedule(() ->
+                Minecraft.getInstance().setScreen(builder.build())
         );
     }
 
@@ -223,14 +223,14 @@ public class ConfigManager {
                 if (configJson.has("toggleKey")) {
                     try {
                         String key = configJson.get("toggleKey").getAsString();
-                        InputUtil.Key parsedKey = InputUtil.fromTranslationKey(key);
+                        InputConstants.Key parsedKey = InputConstants.getKey(key);
 
-                        if (parsedKey == null || key.trim().isEmpty()) {
+                        if (key.trim().isEmpty()) {
                             throw new IllegalArgumentException();
                         }
                         config.setToggleKey(parsedKey);
                     } catch (Exception e) {
-                        config.setToggleKey(InputUtil.fromTranslationKey("key.keyboard.b"));
+                        config.setToggleKey(InputConstants.getKey("key.keyboard.b"));
                         errorMessages.add("Toggle key of mod \"Natural Motion Blur\" was invalid and has been reset to default (V).");
                         configModified = true;
                     }

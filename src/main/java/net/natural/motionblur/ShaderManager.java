@@ -3,18 +3,17 @@ package net.natural.motionblur;
 import com.mojang.blaze3d.buffers.GpuBuffer;
 import com.mojang.blaze3d.buffers.Std140Builder;
 import com.mojang.blaze3d.systems.RenderSystem;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.gl.PostEffectPass;
-import net.minecraft.client.gl.PostEffectProcessor;
-import net.minecraft.client.gl.ShaderLoader;
-import net.minecraft.client.render.DefaultFramebufferSet;
-import net.minecraft.client.util.ObjectAllocator;
-import net.minecraft.util.Identifier;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.renderer.PostPass;
+import net.minecraft.client.renderer.PostChain;
+import net.minecraft.client.renderer.LevelTargetBundle;
+import com.mojang.blaze3d.resource.GraphicsResourceAllocator;
+import net.minecraft.resources.Identifier;
 import net.natural.motionblur.config.ConfigEntries;
 import net.natural.motionblur.config.ConfigManager;
-import net.natural.motionblur.mixin.PostEffectPassAccessor;
-import net.natural.motionblur.mixin.PostEffectProcessorAccessor;
-import net.natural.motionblur.mixin.ShaderLoaderAccessor;
+import net.natural.motionblur.mixin.PostPassAccessor;
+import net.natural.motionblur.mixin.PostChainAccessor;
+import net.natural.motionblur.mixin.ShaderManagerAccessor;
 import org.joml.Matrix4f;
 
 import java.util.List;
@@ -37,10 +36,10 @@ public class ShaderManager {
     private static GpuBuffer motionBlurUBO = null;
     private static final int UBO_SIZE = 304;
     private static boolean loadErrorLogged = false;
-    private static PostEffectProcessor lastKnownProcessor = null; // Track processor identity to detect resource reloads (see replaceUniformBuffer)
-    private static ObjectAllocator frameAllocator = null; // Captured each frame by MixinLevelRenderer; reset after use
+    private static PostChain lastKnownProcessor = null; // Track processor identity to detect resource reloads (see replaceUniformBuffer)
+    private static GraphicsResourceAllocator frameAllocator = null; // Captured each frame by MixinLevelRenderer; reset after use
 
-    public static void captureAllocator(ObjectAllocator allocator) {
+    public static void captureAllocator(GraphicsResourceAllocator allocator) {
         frameAllocator = allocator;
     }
 
@@ -70,13 +69,13 @@ public class ShaderManager {
             return false;
         }
         // F5 enabled?
-        MinecraftClient client = MinecraftClient.getInstance();
-        return client.options.getPerspective().isFirstPerson() || config.renderF5;
+        Minecraft client = Minecraft.getInstance();
+        return client.options.getCameraType().isFirstPerson() || config.renderF5;
     }
 
     private static void applyMotionBlurInternal() {
         ConfigEntries config = ConfigManager.getConfig();
-        MinecraftClient client = MinecraftClient.getInstance();
+        Minecraft client = Minecraft.getInstance();
 
         // Detect refresh rate on first use
         MonitorInfoProvider.updateDisplayInfo();
@@ -103,27 +102,27 @@ public class ShaderManager {
 
         if (frameAllocator == null) return;
 
-        PostEffectProcessor processor = getProcessor(client);
+        PostChain processor = getProcessor(client);
         if (processor == null) return;
 
         // Set uniform values for the shader
         replaceUniformBuffer(processor, scaledStrength,
-                client.getFramebuffer().textureWidth,
-                client.getFramebuffer().textureHeight,
+                client.getMainRenderTarget().width,
+                client.getMainRenderTarget().height,
                 config.depthBlur, config.blurAlgorithm.ordinal());
 
         // Render the shader effect
-        processor.render(client.getFramebuffer(), frameAllocator);
+        processor.process(client.getMainRenderTarget(), frameAllocator);
     }
 
-    private static PostEffectProcessor getProcessor(MinecraftClient client) {
+    private static PostChain getProcessor(Minecraft client) {
         try {
-            ShaderLoader.Cache cache = ((ShaderLoaderAccessor) client.getShaderLoader()).getCache();
+            net.minecraft.client.renderer.ShaderManager.CompilationCache cache = ((ShaderManagerAccessor) client.getShaderManager()).getCompilationCache();
             if (cache == null) return null;
             loadErrorLogged = false;
-            return cache.getOrLoadProcessor(
-                    Identifier.of(NaturalMotionBlurMod.ID, "motion_blur"),
-                    DefaultFramebufferSet.MAIN_ONLY);
+            return cache.getOrLoadPostChain(
+                    Identifier.fromNamespaceAndPath(NaturalMotionBlurMod.ID, "motion_blur"),
+                    LevelTargetBundle.MAIN_TARGETS);
         } catch (Exception e) {
             if (!loadErrorLogged) {
                 System.err.println("[NaturalMotionBlur] Failed to load shader: " + e.getMessage());
@@ -133,14 +132,14 @@ public class ShaderManager {
         }
     }
 
-    private static void replaceUniformBuffer(PostEffectProcessor processor,
+    private static void replaceUniformBuffer(PostChain processor,
                                              float blendFactor, float viewW, float viewH,
                                              boolean useDepth, int blurAlgorithm) {
-        List<PostEffectPass> passes = ((PostEffectProcessorAccessor) processor).getPasses();
+        List<PostPass> passes = ((PostChainAccessor) processor).getPasses();
         if (passes.isEmpty()) return;
 
         Map<String, GpuBuffer> uniformBuffers =
-                ((PostEffectPassAccessor) passes.getFirst()).getUniformBuffers();
+                ((PostPassAccessor) passes.getFirst()).getCustomUniforms();
         if (!uniformBuffers.containsKey("MotionBlurUniforms")) return;
 
         // Prevent Resource Reload Crash
@@ -160,7 +159,6 @@ public class ShaderManager {
         try (GpuBuffer.MappedView view = RenderSystem.getDevice()
                 .createCommandEncoder()
                 .mapBuffer(motionBlurUBO, false, true)) {
-            if (view == null) return;
             Std140Builder builder = Std140Builder.intoBuffer(view.data());
             builder.putMat4f(tempMvInverse);
             builder.putMat4f(tempProjInverse);
@@ -179,17 +177,6 @@ public class ShaderManager {
         Object device = RenderSystem.getDevice();
         java.util.function.Supplier<String> name = () -> "naturalmotionblur:MotionBlurUniforms";
 
-        // 1.21.9: createBuffer(Supplier<String>, int, int)
-        try {
-            var m = device.getClass().getMethod(
-                    "createBuffer", java.util.function.Supplier.class, int.class, int.class);
-            return (GpuBuffer) m.invoke(device, name, 130, ShaderManager.UBO_SIZE);
-        } catch (NoSuchMethodException ignored) {
-        } catch (ReflectiveOperationException e) {
-            throw new RuntimeException("[NMB] createBuffer (1.21.9) failed", e);
-        }
-
-        // 1.21.11: createBuffer(Supplier<String>, int, long)
         try {
             var m = device.getClass().getMethod(
                     "createBuffer", java.util.function.Supplier.class, int.class, long.class);

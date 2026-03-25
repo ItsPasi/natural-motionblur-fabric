@@ -1,6 +1,6 @@
 package net.natural.motionblur.config;
 
-import net.minecraft.client.util.InputUtil;
+import com.mojang.blaze3d.platform.InputConstants;
 
 public class ConfigEntries {
     public boolean enabled = true;
@@ -12,11 +12,11 @@ public class ConfigEntries {
     public BlurAlgorithm blurAlgorithm = BlurAlgorithm.CENTERED;
     public String toggleKey = "key.keyboard.b";
 
-    public InputUtil.Key getToggleKey() {
-        return InputUtil.fromTranslationKey(toggleKey);
+    public InputConstants.Key getToggleKey() {
+        return InputConstants.getKey(toggleKey);
     }
 
-    public void setToggleKey(InputUtil.Key key) {
-        this.toggleKey = key.getTranslationKey();
+    public void setToggleKey(InputConstants.Key key) {
+        this.toggleKey = key.getName();
     }
 }

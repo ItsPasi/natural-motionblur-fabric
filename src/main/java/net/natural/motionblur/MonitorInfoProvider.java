@@ -1,6 +1,6 @@
 package net.natural.motionblur;
 
-import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.Minecraft;
 import org.lwjgl.PointerBuffer;
 import org.lwjgl.glfw.GLFW;
 import org.lwjgl.glfw.GLFWVidMode;
@@ -21,15 +21,14 @@ public class MonitorInfoProvider {
         }
         lastCheckTime = now;
 
-        MinecraftClient client = MinecraftClient.getInstance();
-        if (client == null || client.getWindow() == null) return;
+        Minecraft client = Minecraft.getInstance();
 
-        long window = client.getWindow().getHandle();
+        long window = client.getWindow().handle();
         long monitor = GLFW.glfwGetWindowMonitor(window);
 
         // If windowed mode, manually detect monitor from window position
         if (monitor == 0) {
-            monitor = getMonitorFromWindowPosition(window, client.getWindow().getWidth(), client.getWindow().getHeight());
+            monitor = getMonitorFromWindowPosition(window, client.getWindow().getScreenWidth(), client.getWindow().getScreenHeight());
         }
 
         // If monitor changed, update refresh rate

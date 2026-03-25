@@ -1,7 +1,9 @@
+// TODO(Ravel): Failed to fully resolve file: class com.intellij.psi.impl.source.tree.java.PsiPolyadicExpressionImpl cannot be cast to class com.intellij.psi.PsiLiteralExpression (com.intellij.psi.impl.source.tree.java.PsiPolyadicExpressionImpl and com.intellij.psi.PsiLiteralExpression are in unnamed module of loader com.intellij.ide.plugins.cl.PluginClassLoader @514f90a8)
+// TODO(Ravel): Failed to fully resolve file: class com.intellij.psi.impl.source.tree.java.PsiPolyadicExpressionImpl cannot be cast to class com.intellij.psi.PsiLiteralExpression (com.intellij.psi.impl.source.tree.java.PsiPolyadicExpressionImpl and com.intellij.psi.PsiLiteralExpression are in unnamed module of loader com.intellij.ide.plugins.cl.PluginClassLoader @514f90a8)
 package net.natural.motionblur.mixin;
 
-import net.minecraft.client.render.GameRenderer;
-import net.minecraft.client.render.RenderTickCounter;
+import net.minecraft.client.renderer.GameRenderer;
+import net.minecraft.client.DeltaTracker;
 import net.natural.motionblur.ShaderManager;
 import net.natural.motionblur.config.ConfigManager;
 import org.spongepowered.asm.mixin.Mixin;
@@ -13,20 +15,20 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 public class MixinGameRenderer {
 
     @Inject(
-            method = "renderWorld",
+            method = "renderLevel",
             at = @At(
                     value = "INVOKE",
-                    target = "Lnet/minecraft/client/render/WorldRenderer;render(" +
-                            "Lnet/minecraft/client/util/ObjectAllocator;" +
-                            "Lnet/minecraft/client/render/RenderTickCounter;" +
-                            "ZLnet/minecraft/client/render/Camera;" +
+                    target = "Lnet/minecraft/client/renderer/LevelRenderer;renderLevel(" +
+                            "Lcom/mojang/blaze3d/resource/GraphicsResourceAllocator;" +
+                            "Lnet/minecraft/client/DeltaTracker;" +
+                            "ZLnet/minecraft/client/Camera;" +
                             "Lorg/joml/Matrix4f;Lorg/joml/Matrix4f;Lorg/joml/Matrix4f;" +
                             "Lcom/mojang/blaze3d/buffers/GpuBufferSlice;" +
                             "Lorg/joml/Vector4f;Z)V",
                     shift = At.Shift.AFTER
             )
     )
-    private void afterWorldRender(RenderTickCounter tickCounter, CallbackInfo ci) {
+    private void afterWorldRender(DeltaTracker tickCounter, CallbackInfo ci) {
         if (!ConfigManager.getConfig().enabled) return;
         ShaderManager.applyMotionBlur();
     }
