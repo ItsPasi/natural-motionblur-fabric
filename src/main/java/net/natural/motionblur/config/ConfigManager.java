@@ -3,10 +3,10 @@ package net.natural.motionblur.config;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonObject;
-import me.shedaniel.clothconfig2.api.*;
+import dev.isxander.yacl3.api.*;
+import dev.isxander.yacl3.api.controller.*;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.Minecraft;
-import com.mojang.blaze3d.platform.InputConstants;
 import net.minecraft.network.chat.Component;
 import net.minecraft.ChatFormatting;
 import org.apache.commons.io.FileUtils;
@@ -31,91 +31,89 @@ public class ConfigManager {
         return config;
     }
 
-    //Config Screen Interface
+    // Config Screen Interface
     public static void openConfigScreen() {
-        ConfigBuilder builder = ConfigBuilder.create()
-                .setParentScreen(null)
-                .setTitle(Component.literal("Natural Motion Blur"));
-
-        ConfigCategory general = builder.getOrCreateCategory(Component.literal("Motion Blur Options"));
-        ConfigEntryBuilder entryBuilder = builder.entryBuilder();
         ConfigEntries cfg = getConfig();
 
-        // Toggle Motion Blur
-        general.addEntry(entryBuilder.startBooleanToggle(Component.literal("Toggle Motion Blur"), cfg.enabled)
-                .setDefaultValue(true)
-                .setSaveConsumer(newValue -> cfg.enabled = newValue)
-                .build());
+        var screen = YetAnotherConfigLib.createBuilder()
+                .title(Component.literal("Natural Motion Blur"))
+                .category(ConfigCategory.createBuilder()
+                        .name(Component.literal("Motion Blur Options"))
 
-        // Third Person Rendering
-        general.addEntry(entryBuilder.startBooleanToggle(Component.literal("Third Person Rendering"), cfg.renderF5)
-                .setDefaultValue(true)
-                .setTooltip(Component.literal("Decide whether the motion blur should be rendered in third person (F5) or not."))
-                .setSaveConsumer(newValue -> cfg.renderF5 = newValue)
-                .build());
+                        // Toggle Motion Blur
+                        .option(Option.<Boolean>createBuilder()
+                                .name(Component.literal("Toggle Motion Blur"))
+                                .binding(true, () -> cfg.enabled, newValue -> cfg.enabled = newValue)
+                                .controller(TickBoxControllerBuilder::create)
+                                .build())
 
-        // Use Refresh Rate Scaling
-        general.addEntry(entryBuilder.startBooleanToggle(Component.literal("Use Refresh Rate Scaling"), cfg.refreshRateScaling)
-                .setDefaultValue(true)
-                .setTooltip(Component.literal("If enabled, motion blur strength will adjust automatically based on FPS relative to your display's refresh rate.\n" +
-                        "When disabled, the blur strength is fixed to the set value."))
-                .setSaveConsumer(newValue -> cfg.refreshRateScaling = newValue)
-                .build());
+                        // Third Person Rendering
+                        .option(Option.<Boolean>createBuilder()
+                                .name(Component.literal("Third Person Rendering"))
+                                .description(OptionDescription.of(Component.literal(
+                                        "Decide whether the motion blur should be rendered in third person (F5) or not.")))
+                                .binding(true, () -> cfg.renderF5, newValue -> cfg.renderF5 = newValue)
+                                .controller(TickBoxControllerBuilder::create)
+                                .build())
 
-        // Use Depth Blur
-        general.addEntry(entryBuilder.startBooleanToggle(Component.literal("Use Depth Blur"), cfg.depthBlur)
-                .setDefaultValue(true)
-                .setTooltip(Component.literal("""
-                        If enabled, the mod will use depth information for movement blur.
-                        When disabled, only mouse movement will be blurred.\s
-                        
-                        This setting is incompatible with\s""").append(Component.literal("Fabulous!").withStyle(ChatFormatting.ITALIC)).append(" graphics. Depth blur will not work regardless of this setting."))
-                .setSaveConsumer(newValue -> cfg.depthBlur = newValue)
-                .build());
+                        // Use Refresh Rate Scaling
+                        .option(Option.<Boolean>createBuilder()
+                                .name(Component.literal("Use Refresh Rate Scaling"))
+                                .description(OptionDescription.of(Component.literal(
+                                        "If enabled, motion blur strength will adjust automatically based on FPS relative to your display's refresh rate.\n" +
+                                                "When disabled, the blur strength is fixed to the set value.")))
+                                .binding(true, () -> cfg.refreshRateScaling, newValue -> cfg.refreshRateScaling = newValue)
+                                .controller(TickBoxControllerBuilder::create)
+                                .build())
 
-        // Motion Blur Strength
-        general.addEntry(entryBuilder.startFloatField(Component.literal("Motion Blur Strength"), cfg.motionBlurStrength)
-                .setDefaultValue(1.0F)
-                .setMin(-1000)
-                .setMax(1000)
-                .setTooltip(Component.literal("Sets the intensity of the blur. \n" +
-                        "Default setting (1.0) blurs frames ideally in correlation to the framerate."))
-                .setSaveConsumer(newValue -> cfg.motionBlurStrength = newValue)
-                .build());
+                        // Use Depth Blur
+                        .option(Option.<Boolean>createBuilder()
+                                .name(Component.literal("Use Depth Blur"))
+                                .description(OptionDescription.of(
+                                        Component.literal("""
+                                                If enabled, the mod will use depth information for movement blur.
+                                                When disabled, only mouse movement will be blurred.\s
 
-        // Blur Algorithm
-        general.addEntry(entryBuilder.startEnumSelector(
-                        Component.literal("Blur Algorithm"),
-                        ConfigEntries.BlurAlgorithm.class,
-                        cfg.blurAlgorithm)
-                .setDefaultValue(ConfigEntries.BlurAlgorithm.CENTERED)
-                .setTooltip(Component.literal("""
-                        Changes the blur to either only blur frames behind player movement or in both directions.\s
-                        
-                        BACKWARDS has better blur continuity (less gaps in the blur) but a slight increase in perceived input lag.\s
-                        CENTERED has better visual uniformity (e.g. translucent objects) and no perceived increase in input lag."""))
-                .setSaveConsumer(newValue -> cfg.blurAlgorithm = newValue)
-                .build());
+                                                This setting is incompatible with\s""")
+                                                .append(Component.literal("Fabulous!").withStyle(ChatFormatting.ITALIC))
+                                                .append(" graphics. Depth blur will not work regardless of this setting.")))
+                                .binding(true, () -> cfg.depthBlur, newValue -> cfg.depthBlur = newValue)
+                                .controller(TickBoxControllerBuilder::create)
+                                .build())
 
-        // Toggle Key
-        general.addEntry(entryBuilder.startKeyCodeField(Component.literal("Toggle Key"), cfg.getToggleKey())
-                .setDefaultValue(ModifierKeyCode.of(InputConstants.getKey("key.keyboard.b"), Modifier.none()))
-                .setKeySaveConsumer(newValue -> {
-                    cfg.setToggleKey(newValue);
-                    KeybindingManager.updateKeybinding();
-                })
-                .build());
+                        // Motion Blur Strength
+                        .option(Option.<Float>createBuilder()
+                                .name(Component.literal("Motion Blur Strength"))
+                                .description(OptionDescription.of(Component.literal(
+                                        "Sets the intensity of the blur.\n" +
+                                                "Default setting (1.0) blurs frames ideally in correlation to the framerate.")))
+                                .binding(1.0F, () -> cfg.motionBlurStrength, newValue -> cfg.motionBlurStrength = newValue)
+                                .controller(opt -> FloatFieldControllerBuilder.create(opt).range(-1000f, 1000f))
+                                .build())
 
-        // Set save callback
-        builder.setSavingRunnable(ConfigManager::saveConfig);
+                        // Blur Algorithm
+                        .option(Option.<ConfigEntries.BlurAlgorithm>createBuilder()
+                                .name(Component.literal("Blur Algorithm"))
+                                .description(OptionDescription.of(Component.literal("""
+                                        Changes the blur to either only blur frames behind player movement or in both directions.\s
 
-        // Display the config screen
+                                        BACKWARDS has better blur continuity (less gaps in the blur) but a slight increase in perceived input lag.\s
+                                        CENTERED has better visual uniformity (e.g. translucent objects) and no perceived increase in input lag.""")))
+                                .binding(ConfigEntries.BlurAlgorithm.CENTERED, () -> cfg.blurAlgorithm, newValue -> cfg.blurAlgorithm = newValue)
+                                .controller(opt -> EnumControllerBuilder.create(opt).enumClass(ConfigEntries.BlurAlgorithm.class))
+                                .build())
+
+                        .build())
+                .save(ConfigManager::saveConfig)
+                .build()
+                .generateScreen(null);
+
         Minecraft.getInstance().schedule(() ->
-                Minecraft.getInstance().setScreen(builder.build())
+                Minecraft.getInstance().setScreen(screen)
         );
     }
 
-    //Config Screen Logic
+    // Config Screen Logic
     public static void loadConfig() {
         File configFile = getConfigFile();
         boolean configModified = false;
@@ -215,23 +213,6 @@ public class ConfigManager {
                     } catch (Exception e) {
                         config.blurAlgorithm = ConfigEntries.BlurAlgorithm.CENTERED;
                         errorMessages.add("Blur algorithm of mod \"Natural Motion Blur\" was invalid and has been reset to default (CENTERED).");
-                        configModified = true;
-                    }
-                }
-
-                // Process toggleKey
-                if (configJson.has("toggleKey")) {
-                    try {
-                        String key = configJson.get("toggleKey").getAsString();
-                        InputConstants.Key parsedKey = InputConstants.getKey(key);
-
-                        if (key.trim().isEmpty()) {
-                            throw new IllegalArgumentException();
-                        }
-                        config.setToggleKey(parsedKey);
-                    } catch (Exception e) {
-                        config.setToggleKey(InputConstants.getKey("key.keyboard.b"));
-                        errorMessages.add("Toggle key of mod \"Natural Motion Blur\" was invalid and has been reset to default (V).");
                         configModified = true;
                     }
                 }

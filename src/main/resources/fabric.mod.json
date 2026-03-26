@@ -26,7 +26,7 @@
   "depends": {
     "fabricloader": ">=0.11.3",
     "fabric-api": "*",
-    "cloth-config": "*",
+    "yet_another_config_lib_v3": "*",
     "java": ">=21"
   },
   "breaks": {
