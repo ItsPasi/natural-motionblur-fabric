@@ -21,14 +21,18 @@ public class MixinGameRenderer {
                     target = "Lnet/minecraft/client/renderer/LevelRenderer;renderLevel(" +
                             "Lcom/mojang/blaze3d/resource/GraphicsResourceAllocator;" +
                             "Lnet/minecraft/client/DeltaTracker;" +
-                            "ZLnet/minecraft/client/Camera;" +
-                            "Lorg/joml/Matrix4f;Lorg/joml/Matrix4f;Lorg/joml/Matrix4f;" +
+                            "Z" +
+                            "Lnet/minecraft/client/renderer/state/level/CameraRenderState;" +
+                            "Lorg/joml/Matrix4fc;" +
                             "Lcom/mojang/blaze3d/buffers/GpuBufferSlice;" +
-                            "Lorg/joml/Vector4f;Z)V",
+                            "Lorg/joml/Vector4f;" +
+                            "Z" +
+                            "Lnet/minecraft/client/renderer/chunk/ChunkSectionsToRender;" +
+                            ")V",
                     shift = At.Shift.AFTER
             )
     )
-    private void afterWorldRender(DeltaTracker tickCounter, CallbackInfo ci) {
+    private void afterWorldRender(DeltaTracker deltaTracker, CallbackInfo ci) {
         if (!ConfigManager.getConfig().enabled) return;
         ShaderManager.applyMotionBlur();
     }

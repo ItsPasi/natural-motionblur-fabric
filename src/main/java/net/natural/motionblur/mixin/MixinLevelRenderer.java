@@ -1,12 +1,14 @@
 package net.natural.motionblur.mixin;
 
 import com.mojang.blaze3d.buffers.GpuBufferSlice;
-import net.minecraft.client.Camera;
+import com.mojang.blaze3d.resource.GraphicsResourceAllocator;
 import net.minecraft.client.DeltaTracker;
 import net.minecraft.client.renderer.LevelRenderer;
-import com.mojang.blaze3d.resource.GraphicsResourceAllocator;
+import net.minecraft.client.renderer.chunk.ChunkSectionsToRender;
+import net.minecraft.client.renderer.state.level.CameraRenderState;
 import net.natural.motionblur.ShaderManager;
 import org.joml.Matrix4f;
+import org.joml.Matrix4fc;
 import org.joml.Vector4f;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Unique;
@@ -23,29 +25,32 @@ public class MixinLevelRenderer {
 
     @Inject(method = "renderLevel", at = @At("HEAD"))
     private void onRenderHead(
-            GraphicsResourceAllocator allocator, DeltaTracker tickCounter,
-            boolean renderBlockOutline, Camera camera,
-            Matrix4f positionMatrix, Matrix4f basicProjectionMatrix,
-            Matrix4f projectionMatrix, GpuBufferSlice fogBuffer,
-            Vector4f fogColor, boolean renderSky, CallbackInfo ci) {
+            GraphicsResourceAllocator resourceAllocator, DeltaTracker deltaTracker,
+            boolean renderOutline, CameraRenderState cameraState,
+            Matrix4fc modelViewMatrix, GpuBufferSlice terrainFog,
+            Vector4f fogColor, boolean shouldRenderSky,
+            ChunkSectionsToRender chunkSectionsToRender, CallbackInfo ci) {
 
-        ShaderManager.captureAllocator(allocator);
+        ShaderManager.captureAllocator(resourceAllocator);
 
-        double cx = camera.position().x;
-        double cy = camera.position().y;
-        double cz = camera.position().z;
+        double cx = cameraState.pos.x();
+        double cy = cameraState.pos.y();
+        double cz = cameraState.pos.z();
 
         float dx = (float)(cx - prevCamX);
         float dy = (float)(cy - prevCamY);
         float dz = (float)(cz - prevCamZ);
 
+        Matrix4f modelView = new Matrix4f(modelViewMatrix);
+        Matrix4f projection = new Matrix4f(cameraState.projectionMatrix);
+
         ShaderManager.setFrameMotionBlur(
-                positionMatrix,        prevModelView,
-                basicProjectionMatrix, prevProjection,
+                modelView,      prevModelView,
+                projection,     prevProjection,
                 dx, dy, dz);
 
-        prevModelView.set(positionMatrix);
-        prevProjection.set(basicProjectionMatrix);
+        prevModelView.set(modelViewMatrix);
+        prevProjection.set(cameraState.projectionMatrix);
         prevCamX = cx;
         prevCamY = cy;
         prevCamZ = cz;
