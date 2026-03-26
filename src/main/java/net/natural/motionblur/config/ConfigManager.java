@@ -8,7 +8,6 @@ import dev.isxander.yacl3.api.controller.*;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.Minecraft;
 import net.minecraft.network.chat.Component;
-import net.minecraft.ChatFormatting;
 import org.apache.commons.io.FileUtils;
 
 import java.io.File;
@@ -40,64 +39,64 @@ public class ConfigManager {
                 .category(ConfigCategory.createBuilder()
                         .name(Component.literal("Motion Blur Options"))
 
-                        // Toggle Motion Blur
+                        // Motion Blur Toggle
                         .option(Option.<Boolean>createBuilder()
-                                .name(Component.literal("Toggle Motion Blur"))
+                                .name(Component.literal("Motion Blur"))
                                 .binding(true, () -> cfg.enabled, newValue -> cfg.enabled = newValue)
-                                .controller(TickBoxControllerBuilder::create)
+                                .controller(opt -> BooleanControllerBuilder.create(opt).coloured(true))
                                 .build())
 
-                        // Third Person Rendering
+                        // Third Person Rendering Toggle
                         .option(Option.<Boolean>createBuilder()
                                 .name(Component.literal("Third Person Rendering"))
                                 .description(OptionDescription.of(Component.literal(
-                                        "Decide whether the motion blur should be rendered in third person (F5) or not.")))
+                                    "Decide whether the motion blur should be rendered in third person (F5) or not.")))
                                 .binding(true, () -> cfg.renderF5, newValue -> cfg.renderF5 = newValue)
-                                .controller(TickBoxControllerBuilder::create)
+                                .controller(opt -> BooleanControllerBuilder.create(opt).coloured(true))
                                 .build())
 
-                        // Use Refresh Rate Scaling
+                        // Refresh Rate Scaling Toggle
                         .option(Option.<Boolean>createBuilder()
-                                .name(Component.literal("Use Refresh Rate Scaling"))
-                                .description(OptionDescription.of(Component.literal(
-                                        "If enabled, motion blur strength will adjust automatically based on FPS relative to your display's refresh rate.\n" +
-                                                "When disabled, the blur strength is fixed to the set value.")))
+                                .name(Component.literal("Refresh Rate Scaling"))
+                                .description(OptionDescription.of(Component.literal("""
+                                        If enabled, motion blur strength will adjust automatically based on FPS relative to your display's refresh rate.
+                                        \s
+                                        When disabled, the blur strength is fixed to the set value.""")))
                                 .binding(true, () -> cfg.refreshRateScaling, newValue -> cfg.refreshRateScaling = newValue)
-                                .controller(TickBoxControllerBuilder::create)
+                                .controller(opt -> BooleanControllerBuilder.create(opt).coloured(true))
                                 .build())
 
-                        // Use Depth Blur
+                        // Depth Blur Toggle
                         .option(Option.<Boolean>createBuilder()
-                                .name(Component.literal("Use Depth Blur"))
-                                .description(OptionDescription.of(
-                                        Component.literal("""
-                                                If enabled, the mod will use depth information for movement blur.
-                                                When disabled, only mouse movement will be blurred.\s
-
-                                                This setting is incompatible with\s""")
-                                                .append(Component.literal("Fabulous!").withStyle(ChatFormatting.ITALIC))
-                                                .append(" graphics. Depth blur will not work regardless of this setting.")))
+                                .name(Component.literal("Depth Blur"))
+                                .description(OptionDescription.of(Component.literal("""
+                                        If enabled, the mod will use depth information for movement blur.
+                                        \s
+                                        When disabled, only mouse movement will be blurred.""")))
                                 .binding(true, () -> cfg.depthBlur, newValue -> cfg.depthBlur = newValue)
-                                .controller(TickBoxControllerBuilder::create)
+                                .controller(opt -> BooleanControllerBuilder.create(opt).coloured(true))
                                 .build())
 
-                        // Motion Blur Strength
+                        // Motion Blur Strength Slider
                         .option(Option.<Float>createBuilder()
                                 .name(Component.literal("Motion Blur Strength"))
-                                .description(OptionDescription.of(Component.literal(
-                                        "Sets the intensity of the blur.\n" +
-                                                "Default setting (1.0) blurs frames ideally in correlation to the framerate.")))
+                                .description(OptionDescription.of(Component.literal("""
+                                        Sets the intensity of the blur.
+                                        \s
+                                        Default setting (1.0) blurs frames ideally in correlation to the framerate.""")))
                                 .binding(1.0F, () -> cfg.motionBlurStrength, newValue -> cfg.motionBlurStrength = newValue)
-                                .controller(opt -> FloatFieldControllerBuilder.create(opt).range(-1000f, 1000f))
+                                .controller(opt -> FloatSliderControllerBuilder.create(opt).range(0f, 10f).step(0.1f))
                                 .build())
 
-                        // Blur Algorithm
+                        // Blur Algorithm Switch
                         .option(Option.<ConfigEntries.BlurAlgorithm>createBuilder()
                                 .name(Component.literal("Blur Algorithm"))
                                 .description(OptionDescription.of(Component.literal("""
-                                        Changes the blur to either only blur frames behind player movement or in both directions.\s
-
-                                        BACKWARDS has better blur continuity (less gaps in the blur) but a slight increase in perceived input lag.\s
+                                        Changes the blur to either only blur frames behind player movement or in both directions.
+                                        \s
+                                        \s
+                                        BACKWARDS has better blur continuity (less gaps in the blur) but a slight increase in perceived input lag.
+                                        \s
                                         CENTERED has better visual uniformity (e.g. translucent objects) and no perceived increase in input lag.""")))
                                 .binding(ConfigEntries.BlurAlgorithm.CENTERED, () -> cfg.blurAlgorithm, newValue -> cfg.blurAlgorithm = newValue)
                                 .controller(opt -> EnumControllerBuilder.create(opt).enumClass(ConfigEntries.BlurAlgorithm.class))
