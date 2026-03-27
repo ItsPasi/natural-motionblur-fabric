@@ -33,7 +33,9 @@ public class ShaderManager {
     private static float camDX, camDY, camDZ;
 
     private static final Matrix4f scratchMatrix = new Matrix4f();
-    private static GpuBuffer motionBlurUBO = null;
+    private static final int UBO_COUNT = 3;
+    private static final GpuBuffer[] motionBlurUBOs = new GpuBuffer[UBO_COUNT];
+    private static int currentUboIndex = 0;
     private static final int UBO_SIZE = 304;
     private static boolean loadErrorLogged = false;
     private static PostChain lastKnownProcessor = null; // Track processor identity to detect resource reloads (see replaceUniformBuffer)
@@ -139,20 +141,31 @@ public class ShaderManager {
                 ((PostPassAccessor) passes.getFirst()).getCustomUniforms();
         if (!uniformBuffers.containsKey("MotionBlurUniforms")) return;
 
+        // If processor changed (like an F3+T resource reload), wipe and recreate the ring buffer
         if (processor != lastKnownProcessor) {
-            motionBlurUBO = null;
+            for (int i = 0; i < UBO_COUNT; i++) {
+                if (motionBlurUBOs[i] != null) {
+                    motionBlurUBOs[i].close();
+                }
+                motionBlurUBOs[i] = createBufferCompat();
+            }
             lastKnownProcessor = processor;
+        } else if (motionBlurUBOs[0] == null) {
+            for (int i = 0; i < UBO_COUNT; i++) {
+                motionBlurUBOs[i] = createBufferCompat();
+            }
         }
 
-        if (motionBlurUBO == null) {
-            motionBlurUBO = createBufferCompat();
-            GpuBuffer old = uniformBuffers.put("MotionBlurUniforms", motionBlurUBO);
-            if (old != null) old.close();
-        }
+        // Cycle to the next buffer in the ring
+        currentUboIndex = (currentUboIndex + 1) % UBO_COUNT;
+        GpuBuffer currentUBO = motionBlurUBOs[currentUboIndex];
 
-        try (GpuBuffer.MappedView view = RenderSystem.getDevice()
-                .createCommandEncoder()
-                .mapBuffer(motionBlurUBO, false, true)) {
+        // Assign this frame's UBO to the shader
+        uniformBuffers.put("MotionBlurUniforms", currentUBO);
+
+        // Map and write to the buffer
+        var commandEncoder = RenderSystem.getDevice().createCommandEncoder();
+        try (GpuBuffer.MappedView view = commandEncoder.mapBuffer(currentUBO, false, true)) {
             Std140Builder builder = Std140Builder.intoBuffer(view.data());
             builder.putMat4f(tempMvInverse);
             builder.putMat4f(tempProjInverse);
@@ -163,7 +176,7 @@ public class ShaderManager {
             builder.putFloat(blendFactor);
             builder.putInt(sampleAmount);
             builder.putInt(blurAlgorithm);
-            builder.putInt(1); // useDepth always on
+            builder.putInt(1);
         }
     }
 
