@@ -44,33 +44,30 @@ public class ShaderManager {
     }
 
     public static void applyMotionBlur() {
-        long now = System.nanoTime();
-        float deltaTime = (now - lastNano) / 1_000_000_000.0f;
-        lastNano = now;
+        try {
+            long now = System.nanoTime();
+            float deltaTime = (now - lastNano) / 1_000_000_000.0f;
+            lastNano = now;
 
             // FPS calculation
             if (deltaTime > 0 && deltaTime < 1.0f) {
                 currentFPS = 1.0f / deltaTime;
             } else {
-                currentFPS = 0.0f; // Avoid division by zero
+                currentFPS = 0.0f;
             }
 
             if (shouldRenderMotionBlur()) {
                 applyMotionBlurInternal();
             }
-        frameAllocator = null;
+        } finally {
+            frameAllocator = null;
+        }
     }
 
     // Checks if blur should be rendered
     private static boolean shouldRenderMotionBlur() {
         ConfigEntries config = ConfigManager.getConfig();
-        // Config enabled?
-        if (config.motionBlurStrength == 0 || !config.enabled) {
-            return false;
-        }
-        // F5 enabled?
-        Minecraft client = Minecraft.getInstance();
-        return client.options.getCameraType().isFirstPerson() || config.renderF5;
+        return config.enabled && config.motionBlurStrength != 0;
     }
 
     private static void applyMotionBlurInternal() {
@@ -109,7 +106,7 @@ public class ShaderManager {
         replaceUniformBuffer(processor, scaledStrength,
                 client.getMainRenderTarget().width,
                 client.getMainRenderTarget().height,
-                config.depthBlur, config.blurAlgorithm.ordinal());
+                config.blurAlgorithm.ordinal());
 
         // Render the shader effect
         processor.process(client.getMainRenderTarget(), frameAllocator);
@@ -134,7 +131,7 @@ public class ShaderManager {
 
     private static void replaceUniformBuffer(PostChain processor,
                                              float blendFactor, float viewW, float viewH,
-                                             boolean useDepth, int blurAlgorithm) {
+                                             int blurAlgorithm) {
         List<PostPass> passes = ((PostChainAccessor) processor).getPasses();
         if (passes.isEmpty()) return;
 
@@ -142,20 +139,17 @@ public class ShaderManager {
                 ((PostPassAccessor) passes.getFirst()).getCustomUniforms();
         if (!uniformBuffers.containsKey("MotionBlurUniforms")) return;
 
-        // Prevent Resource Reload Crash
         if (processor != lastKnownProcessor) {
             motionBlurUBO = null;
             lastKnownProcessor = processor;
         }
 
         if (motionBlurUBO == null) {
-            motionBlurUBO = createBufferCompat(
-            );
+            motionBlurUBO = createBufferCompat();
             GpuBuffer old = uniformBuffers.put("MotionBlurUniforms", motionBlurUBO);
             if (old != null) old.close();
         }
 
-        // Map and write uniform data directly into the existing GPU buffer
         try (GpuBuffer.MappedView view = RenderSystem.getDevice()
                 .createCommandEncoder()
                 .mapBuffer(motionBlurUBO, false, true)) {
@@ -169,7 +163,7 @@ public class ShaderManager {
             builder.putFloat(blendFactor);
             builder.putInt(sampleAmount);
             builder.putInt(blurAlgorithm);
-            builder.putInt(useDepth ? 1 : 0);
+            builder.putInt(1); // useDepth always on
         }
     }
 
@@ -183,7 +177,7 @@ public class ShaderManager {
             return (GpuBuffer) m.invoke(device, name, 130, (long) ShaderManager.UBO_SIZE);
         } catch (NoSuchMethodException ignored) {
         } catch (ReflectiveOperationException e) {
-            throw new RuntimeException("[NMB] createBuffer (1.21.11) failed", e);
+            throw new RuntimeException("[NMB] createBuffer failed", e);
         }
 
         throw new RuntimeException("[NMB] No compatible createBuffer found on " + device.getClass());
