@@ -16,6 +16,7 @@ import net.natural.motionblur.mixin.PostChainAccessor;
 import net.natural.motionblur.mixin.ShaderManagerAccessor;
 import org.joml.Matrix4f;
 
+import java.lang.reflect.Method;
 import java.util.List;
 import java.util.Map;
 
@@ -33,13 +34,12 @@ public class ShaderManager {
     private static float camDX, camDY, camDZ;
 
     private static final Matrix4f scratchMatrix = new Matrix4f();
-    private static final int UBO_COUNT = 3;
-    private static final GpuBuffer[] motionBlurUBOs = new GpuBuffer[UBO_COUNT];
-    private static int currentUboIndex = 0;
+    private static GpuBuffer motionBlurUBO = null;
     private static final int UBO_SIZE = 304;
     private static boolean loadErrorLogged = false;
-    private static PostChain lastKnownProcessor = null; // Track processor identity to detect resource reloads (see replaceUniformBuffer)
-    private static GraphicsResourceAllocator frameAllocator = null; // Captured each frame by MixinLevelRenderer; reset after use
+    private static PostChain cachedProcessor = null;
+    private static Method createBufferMethod = null;
+    private static GraphicsResourceAllocator frameAllocator = null;
 
     public static void captureAllocator(GraphicsResourceAllocator allocator) {
         frameAllocator = allocator;
@@ -116,17 +116,30 @@ public class ShaderManager {
 
     private static PostChain getProcessor(Minecraft client) {
         try {
-            net.minecraft.client.renderer.ShaderManager.CompilationCache cache = ((ShaderManagerAccessor) client.getShaderManager()).getCompilationCache();
-            if (cache == null) return null;
-            loadErrorLogged = false;
-            return cache.getOrLoadPostChain(
+            net.minecraft.client.renderer.ShaderManager.CompilationCache cache =
+                    ((ShaderManagerAccessor) client.getShaderManager()).getCompilationCache();
+            if (cache == null) {
+                cachedProcessor = null;
+                return null;
+            }
+
+            PostChain processor = cache.getOrLoadPostChain(
                     Identifier.fromNamespaceAndPath(NaturalMotionBlurMod.ID, "motion_blur"),
                     LevelTargetBundle.MAIN_TARGETS);
+
+            if (processor != cachedProcessor) {
+                cachedProcessor = processor;
+                motionBlurUBO = null;
+            }
+
+            loadErrorLogged = false;
+            return cachedProcessor;
         } catch (Exception e) {
             if (!loadErrorLogged) {
                 System.err.println("[NaturalMotionBlur] Failed to load shader: " + e.getMessage());
                 loadErrorLogged = true;
             }
+            cachedProcessor = null;
             return null;
         }
     }
@@ -141,31 +154,15 @@ public class ShaderManager {
                 ((PostPassAccessor) passes.getFirst()).getCustomUniforms();
         if (!uniformBuffers.containsKey("MotionBlurUniforms")) return;
 
-        // If processor changed (like an F3+T resource reload), wipe and recreate the ring buffer
-        if (processor != lastKnownProcessor) {
-            for (int i = 0; i < UBO_COUNT; i++) {
-                if (motionBlurUBOs[i] != null) {
-                    motionBlurUBOs[i].close();
-                }
-                motionBlurUBOs[i] = createBufferCompat();
-            }
-            lastKnownProcessor = processor;
-        } else if (motionBlurUBOs[0] == null) {
-            for (int i = 0; i < UBO_COUNT; i++) {
-                motionBlurUBOs[i] = createBufferCompat();
-            }
+        if (motionBlurUBO == null) {
+            motionBlurUBO = createBufferCompat();
         }
+        GpuBuffer old = uniformBuffers.put("MotionBlurUniforms", motionBlurUBO);
+        if (old != null && old != motionBlurUBO) old.close();
 
-        // Cycle to the next buffer in the ring
-        currentUboIndex = (currentUboIndex + 1) % UBO_COUNT;
-        GpuBuffer currentUBO = motionBlurUBOs[currentUboIndex];
-
-        // Assign this frame's UBO to the shader
-        uniformBuffers.put("MotionBlurUniforms", currentUBO);
-
-        // Map and write to the buffer
-        var commandEncoder = RenderSystem.getDevice().createCommandEncoder();
-        try (GpuBuffer.MappedView view = commandEncoder.mapBuffer(currentUBO, false, true)) {
+        try (GpuBuffer.MappedView view = RenderSystem.getDevice()
+                .createCommandEncoder()
+                .mapBuffer(motionBlurUBO, false, true)) {
             Std140Builder builder = Std140Builder.intoBuffer(view.data());
             builder.putMat4f(tempMvInverse);
             builder.putMat4f(tempProjInverse);
@@ -185,9 +182,11 @@ public class ShaderManager {
         java.util.function.Supplier<String> name = () -> "naturalmotionblur:MotionBlurUniforms";
 
         try {
-            var m = device.getClass().getMethod(
-                    "createBuffer", java.util.function.Supplier.class, int.class, long.class);
-            return (GpuBuffer) m.invoke(device, name, 130, (long) ShaderManager.UBO_SIZE);
+            if (createBufferMethod == null) {
+                createBufferMethod = device.getClass().getMethod(
+                        "createBuffer", java.util.function.Supplier.class, int.class, long.class);
+            }
+            return (GpuBuffer) createBufferMethod.invoke(device, name, 130, (long) UBO_SIZE);
         } catch (NoSuchMethodException ignored) {
         } catch (ReflectiveOperationException e) {
             throw new RuntimeException("[NMB] createBuffer failed", e);
