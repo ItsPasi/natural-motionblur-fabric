@@ -5,7 +5,6 @@ import net.fabricmc.fabric.api.client.command.v2.ClientCommands;
 import net.fabricmc.fabric.api.client.command.v2.ClientCommandRegistrationCallback;
 import net.minecraft.client.Minecraft;
 import net.minecraft.network.chat.Component;
-import net.natural.motionblur.ShaderManager;
 
 public class CommandManager {
 
@@ -40,7 +39,6 @@ public class CommandManager {
 
         ConfigManager.getConfig().motionBlurStrength = strength;
         ConfigManager.saveConfig();
-        ShaderManager.updateBlurStrength(strength);
         assert Minecraft.getInstance().player != null;
         Minecraft.getInstance().player.sendSystemMessage(
                 Component.literal("Motion blur strength set to " + strength)

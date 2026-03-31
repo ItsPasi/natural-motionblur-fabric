@@ -3,8 +3,13 @@ package net.natural.motionblur.config;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonObject;
-import dev.isxander.yacl3.api.*;
-import dev.isxander.yacl3.api.controller.*;
+import dev.isxander.yacl3.api.ConfigCategory;
+import dev.isxander.yacl3.api.Option;
+import dev.isxander.yacl3.api.OptionDescription;
+import dev.isxander.yacl3.api.YetAnotherConfigLib;
+import dev.isxander.yacl3.api.controller.BooleanControllerBuilder;
+import dev.isxander.yacl3.api.controller.EnumControllerBuilder;
+import dev.isxander.yacl3.api.controller.FloatSliderControllerBuilder;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.Minecraft;
 import net.minecraft.network.chat.Component;
@@ -68,17 +73,6 @@ public class ConfigManager {
                                 .controller(opt -> FloatSliderControllerBuilder.create(opt).range(0f, 10f).step(0.1f))
                                 .build())
 
-                        // Exclude Entities Selection
-                        .option(Option.<ConfigEntries.ExcludeEntities>createBuilder()
-                                .name(Component.literal("Exclude Entities"))
-                                .description(OptionDescription.of(Component.literal("""
-                                        This option will remove any blur from entities, particles and translucent objects."""
-                                )))
-                                .binding(ConfigEntries.ExcludeEntities.THIRD_PERSON, () -> cfg.excludeEntities, newValue -> cfg.excludeEntities = newValue)
-                                .controller(opt -> EnumControllerBuilder.create(opt).enumClass(ConfigEntries.ExcludeEntities.class))
-                                .build())
-
-                        // Blur Algorithm Switch
                         .option(Option.<ConfigEntries.BlurAlgorithm>createBuilder()
                                 .name(Component.literal("Blur Algorithm"))
                                 .description(OptionDescription.of(Component.literal("""
@@ -129,10 +123,6 @@ public class ConfigManager {
             if (json.has("motionBlurStrength")) {
                 try { float v = json.get("motionBlurStrength").getAsFloat(); if (v < -1000.0F || v > 1000.0F) throw new IllegalArgumentException(); config.motionBlurStrength = v; }
                 catch (Exception e) { config.motionBlurStrength = 1.0F; errorMessages.add("Motion Blur Strength option of \"Natural Motion Blur\" was invalid and has been reset to default (1.0)."); modified = true; }
-            }
-            if (json.has("excludeEntities")) {
-                try { config.excludeEntities = ConfigEntries.ExcludeEntities.valueOf(json.get("excludeEntities").getAsString().toUpperCase()); }
-                catch (Exception e) { config.excludeEntities = ConfigEntries.ExcludeEntities.NEVER; errorMessages.add("Exclude Entities option of \"Natural Motion Blur\" was invalid and has been reset to default (THIRD_PERSON)."); modified = true; }
             }
             if (json.has("blurAlgorithm")) {
                 try { config.blurAlgorithm = ConfigEntries.BlurAlgorithm.valueOf(json.get("blurAlgorithm").getAsString().toUpperCase()); }

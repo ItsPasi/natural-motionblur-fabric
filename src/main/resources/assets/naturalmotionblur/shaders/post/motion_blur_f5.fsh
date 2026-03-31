@@ -3,7 +3,7 @@
 uniform sampler2D MainSampler;
 uniform sampler2D MainDepthSampler;
 
-layout(std140) uniform MotionBlurUniforms {
+layout(std140) uniform PreEntityBlurUniforms {
     mat4 mvInverse;
     mat4 projInverse;
     mat4 prevModelView;
@@ -43,12 +43,12 @@ void main() {
     ivec2 texel = ivec2(gl_FragCoord.xy);
 
     float depth = texelFetch(MainDepthSampler, texel, 0).x;
-    // Iris Hand Fix
+
     if (depth < 0.56) {
         color = texture(MainSampler, texCoord);
         return;
     }
-    // Depth blend inconsistency fix
+
     float dilatedDepth = depth;
     for (int x = -1; x <= 1; x++) {
         for (int y = -1; y <= 1; y++) {
@@ -56,8 +56,9 @@ void main() {
             dilatedDepth = min(dilatedDepth, d);
         }
     }
-    vec2 velocity = texCoord - reproject(vec3(texCoord, useDepth == 1 ? dilatedDepth : 1.0)).xy;
-    velocity = clampLength(velocity);
+
+    vec2 vel_full = texCoord - reproject(vec3(texCoord, dilatedDepth)).xy;
+    vec2 velocity = clampLength(vel_full);
 
     float speed = length(velocity);
     int dynamicSamples = clamp(int(ceil(speed * float(motionBlurSamples))), 4, motionBlurSamples);
@@ -65,16 +66,15 @@ void main() {
     vec2 baseStep = (BlendFactor * velocity) / float(dynamicSamples);
     vec3 color_sum = vec3(0.0);
     vec2 seed = texCoord * view_res;
-    float centerOffset = blurAlgorithm == 0 ? 0.0 : -(float(dynamicSamples) * 0.5); //logic for centered blur
+    float centerOffset = blurAlgorithm == 0 ? 0.0 : -(float(dynamicSamples) * 0.5);
 
     for (int i = 0; i < dynamicSamples; ++i) {
         float fi = float(i);
-
         float jitter = noise(seed + vec2(fi, fi * 1.4));
         vec2 pos = texCoord + (fi + centerOffset + jitter) * baseStep;
-        vec3 color = texture(MainSampler, pos).rgb;
-
-        color_sum += color * color;
+        vec3 sampleColor = texture(MainSampler, pos).rgb;
+        color_sum += sampleColor * sampleColor;
     }
+
     color = vec4(sqrt(color_sum / float(dynamicSamples)), 1.0);
 }
