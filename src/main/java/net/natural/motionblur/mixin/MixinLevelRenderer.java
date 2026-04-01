@@ -12,6 +12,8 @@ import net.minecraft.client.renderer.chunk.ChunkSectionsToRender;
 import net.minecraft.client.renderer.state.level.CameraRenderState;
 import net.minecraft.client.renderer.state.level.LevelRenderState;
 import net.natural.motionblur.ShaderManager;
+import net.natural.motionblur.config.ConfigEntries;
+import net.natural.motionblur.config.ConfigManager;
 import org.joml.Matrix4f;
 import org.joml.Matrix4fc;
 import org.joml.Vector4f;
@@ -70,10 +72,14 @@ public class MixinLevelRenderer {
             SubmitNodeCollector output,
             CallbackInfo ci
     ) {
-        if (naturalMotionBlur$shouldUseSpecialSingleBlur()) {
-            ShaderManager.applyF5EntityRideBlur();
-        } else {
-            ShaderManager.applyPreEntityBlur();
+        // Switch for different shader modes
+        ConfigEntries config = ConfigManager.getConfig();
+        if (config.blurAlgorithm != ConfigEntries.BlurAlgorithm.FRAME_BLENDING) {
+            if (naturalMotionBlur$shouldUseSpecialSingleBlur()) {
+                ShaderManager.applyF5EntityRideBlur();
+            } else {
+                ShaderManager.applyPreEntityBlur();
+            }
         }
     }
 
@@ -91,7 +97,9 @@ public class MixinLevelRenderer {
             ChunkSectionsToRender chunkSectionsToRender,
             CallbackInfo ci
     ) {
-        if (!naturalMotionBlur$shouldUseSpecialSingleBlur()) {
+        // Switch for different shader modes
+        ConfigEntries config = ConfigManager.getConfig();
+        if (config.blurAlgorithm == ConfigEntries.BlurAlgorithm.FRAME_BLENDING || !naturalMotionBlur$shouldUseSpecialSingleBlur()) {
             ShaderManager.applyPostRenderBlur();
         }
         ShaderManager.clearFrameAllocator();

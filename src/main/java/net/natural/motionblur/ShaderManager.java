@@ -16,6 +16,7 @@ import net.natural.motionblur.mixin.PostPassAccessor;
 import net.natural.motionblur.mixin.ShaderManagerAccessor;
 import net.natural.motionblur.shader.BlurStrengthCalculator;
 import net.natural.motionblur.shader.CameraState;
+import net.natural.motionblur.shader.FrameAccumulationManager;
 import net.natural.motionblur.shader.FrameTimer;
 import org.joml.Matrix4f;
 
@@ -50,6 +51,9 @@ public class ShaderManager {
     public static void clearFrameAllocator() { frameAllocator = null; }
     public static void beginFrame() { frameTimer.beginFrame(); }
 
+    // Called on window resize — clears accumulation state so it rebuilds at the new resolution
+    public static void invalidate() { FrameAccumulationManager.invalidate(); }
+
     public static void setFrameMotionBlur(Matrix4f modelView, Matrix4f prevModelView,
                                           Matrix4f projection, Matrix4f prevProjection,
                                           float dx, float dy, float dz) {
@@ -71,6 +75,18 @@ public class ShaderManager {
         ConfigEntries config = ConfigManager.getConfig();
         Minecraft     client = Minecraft.getInstance();
 
+        // FRAME_BLENDING mode: runs on both the post-render and F5/entity-ride passes
+        if (config.blurAlgorithm == ConfigEntries.BlurAlgorithm.FRAME_BLENDING) {
+            if (pass != BlurPass.NORMAL_POST && pass != BlurPass.SPECIAL_F5) return;
+
+            float fps         = frameTimer.getFPS();
+            int   refreshRate = frameTimer.getRefreshRate();
+
+            FrameAccumulationManager.applyAccumulationBlur(frameAllocator, fps, refreshRate);
+            return;
+        }
+
+        // VELOCITY_BASED mode: velocity-based sampling (pre-entity + post-render passes)
         BlurStrengthCalculator.Result blur = strengthCalc.calculate(
                 config.motionBlurStrength,
                 frameTimer.getFPS(),

@@ -28,5 +28,8 @@ public class KeybindingManager {
         ConfigEntries config = ConfigManager.getConfig();
         config.enabled = !config.enabled;
         ConfigManager.saveConfig();
+        if (config.enabled) {
+            net.natural.motionblur.ShaderManager.invalidate();
+        }
     }
 }

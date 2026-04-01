@@ -76,13 +76,13 @@ public class ConfigManager {
                         .option(Option.<ConfigEntries.BlurAlgorithm>createBuilder()
                                 .name(Component.literal("Blur Algorithm"))
                                 .description(OptionDescription.of(Component.literal("""
-                                        Changes the blur to either only blur frames behind player movement or in both directions.
+                                        Changes how motion blur is rendered.
                                         \s
                                         \s
-                                        BACKWARDS has better blur continuity (less gaps in the blur) but a slight increase in perceived input lag.
+                                        VELOCITY_BASED uses velocity to blur in the direction of movement each frame.
                                         \s
-                                        CENTERED has better visual uniformity (e.g. translucent objects) and no perceived increase in input lag.""")))
-                                .binding(ConfigEntries.BlurAlgorithm.CENTERED, () -> cfg.blurAlgorithm, newValue -> cfg.blurAlgorithm = newValue)
+                                        FRAME_BLENDING blends extra rendered frames into the current image.""")))
+                                .binding(ConfigEntries.BlurAlgorithm.VELOCITY_BASED, () -> cfg.blurAlgorithm, newValue -> cfg.blurAlgorithm = newValue)
                                 .controller(opt -> EnumControllerBuilder.create(opt).enumClass(ConfigEntries.BlurAlgorithm.class))
                                 .build())
 
@@ -121,12 +121,12 @@ public class ConfigManager {
                 catch (Exception e) { config.refreshRateScaling = true; errorMessages.add("Refresh Rate Scaling option of \"Natural Motion Blur\" was invalid and has been reset to default (enabled)."); modified = true; }
             }
             if (json.has("motionBlurStrength")) {
-                try { float v = json.get("motionBlurStrength").getAsFloat(); if (v < -1000.0F || v > 1000.0F) throw new IllegalArgumentException(); config.motionBlurStrength = v; }
+                try { float v = json.get("motionBlurStrength").getAsFloat(); if (v < 0.0F || v > 10.0F) throw new IllegalArgumentException(); config.motionBlurStrength = v; }
                 catch (Exception e) { config.motionBlurStrength = 1.0F; errorMessages.add("Motion Blur Strength option of \"Natural Motion Blur\" was invalid and has been reset to default (1.0)."); modified = true; }
             }
             if (json.has("blurAlgorithm")) {
                 try { config.blurAlgorithm = ConfigEntries.BlurAlgorithm.valueOf(json.get("blurAlgorithm").getAsString().toUpperCase()); }
-                catch (Exception e) { config.blurAlgorithm = ConfigEntries.BlurAlgorithm.CENTERED; errorMessages.add("Blur Algorithm option of \"Natural Motion Blur\" was invalid and has been reset to default (CENTERED)."); modified = true; }
+                catch (Exception e) { config.blurAlgorithm = ConfigEntries.BlurAlgorithm.VELOCITY_BASED; errorMessages.add("Blur Algorithm option of \"Natural Motion Blur\" was invalid and has been reset to default (VELOCITY_BASED)."); modified = true; }
             }
 
             if (modified) { saveConfig(); configReset = true; }

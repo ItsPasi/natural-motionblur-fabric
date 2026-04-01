@@ -1,0 +1,31 @@
+{
+  "targets": { "swap": {} },
+  "passes": [
+    {
+      "vertex_shader": "minecraft:core/screenquad",
+      "fragment_shader": "naturalmotionblur:post/motion_blur_display_lerp",
+      "inputs": [
+        { "sampler_name": "Main",    "target": "minecraft:main" },
+        { "sampler_name": "Display", "target": "minecraft:main" }
+      ],
+      "output": "swap",
+      "uniforms": {
+        "DisplayLerpUniforms": [
+          { "name": "displayWeight", "type": "float", "value": 1.0 },
+          { "name": "padding0",      "type": "int",   "value": 0   },
+          { "name": "padding1",      "type": "int",   "value": 0   },
+          { "name": "padding2",      "type": "int",   "value": 0   }
+        ]
+      }
+    },
+    {
+      "vertex_shader": "minecraft:core/screenquad",
+      "fragment_shader": "minecraft:post/blit",
+      "inputs": [{ "sampler_name": "In", "target": "swap" }],
+      "output": "minecraft:main",
+      "uniforms": {
+        "BlitConfig": [{ "name": "ColorModulate", "type": "vec4", "value": [1,1,1,1] }]
+      }
+    }
+  ]
+}

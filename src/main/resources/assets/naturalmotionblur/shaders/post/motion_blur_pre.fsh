@@ -73,7 +73,8 @@ void main() {
     vec2 baseStep = (BlendFactor * velocity) / float(dynamicSamples);
     vec3 color_sum = vec3(0.0);
     vec2 seed = texCoord * view_res;
-    float centerOffset = blurAlgorithm == 0 ? 0.0 : -(float(dynamicSamples) * 0.5);
+    // VELOCITY_BASED (0) uses centered sampling — no perceived input lag increase
+    float centerOffset = -(float(dynamicSamples) * 0.5);
 
     for (int i = 0; i < dynamicSamples; ++i) {
         float fi = float(i);
