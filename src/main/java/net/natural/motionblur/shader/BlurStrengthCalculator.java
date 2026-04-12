@@ -2,15 +2,7 @@ package net.natural.motionblur.shader;
 
 public class BlurStrengthCalculator {
 
-    public static class Result {
-        public final float strength;
-        public final int   sampleAmount;
-
-        Result(float strength, int sampleAmount) {
-            this.strength     = strength;
-            this.sampleAmount = sampleAmount;
-        }
-    }
+    public record Result(float strength, int sampleAmount) {}
 
     public Result calculate(float baseStrength, float fps, int refreshRate, boolean scalingEnabled) {
         if (!scalingEnabled) {

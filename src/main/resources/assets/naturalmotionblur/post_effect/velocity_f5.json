@@ -3,7 +3,7 @@
   "passes": [
     {
       "vertex_shader": "minecraft:core/screenquad",
-      "fragment_shader": "naturalmotionblur:post/motion_blur_f5",
+      "fragment_shader": "naturalmotionblur:post/velocity_f5",
       "inputs": [
         { "sampler_name": "Main",      "target": "minecraft:main" },
         { "sampler_name": "MainDepth", "target": "minecraft:main", "use_depth_buffer": true }

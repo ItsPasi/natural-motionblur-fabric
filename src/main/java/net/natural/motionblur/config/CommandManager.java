@@ -32,7 +32,7 @@ public class CommandManager {
         if (strength < 0.0f || strength > 10.0f) {
             assert Minecraft.getInstance().player != null;
             Minecraft.getInstance().player.sendSystemMessage(
-                    Component.literal("§cInvalid motion blur strength! Value must be between 0 and 10.")
+                    Component.literal("§cInvalid motion blur strength! Value must be between 0 and 2.")
             );
             return 0;
         }

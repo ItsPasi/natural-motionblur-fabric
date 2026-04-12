@@ -10,14 +10,11 @@ public class CameraState {
     private final Matrix4f prevProjection = new Matrix4f();
     private float dx, dy, dz;
 
-    // Scratch matrix used only during inversion — avoids allocating a new one each frame
-    private final Matrix4f scratch = new Matrix4f();
-
     public void setFrame(Matrix4f modelView, Matrix4f prevModelView,
                          Matrix4f projection, Matrix4f prevProjection,
                          float dx, float dy, float dz) {
-        this.mvInverse.set(scratch.set(modelView).invert());
-        this.projInverse.set(scratch.set(projection).invert());
+        modelView.invert(this.mvInverse);
+        projection.invert(this.projInverse);
         this.prevModelView.set(prevModelView);
         this.prevProjection.set(prevProjection);
         this.dx = dx;

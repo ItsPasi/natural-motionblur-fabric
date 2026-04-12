@@ -3,14 +3,14 @@
   "passes": [
     {
       "vertex_shader": "minecraft:core/screenquad",
-      "fragment_shader": "naturalmotionblur:post/motion_blur_post",
+      "fragment_shader": "naturalmotionblur:post/velocity_pre",
       "inputs": [
         { "sampler_name": "Main",      "target": "minecraft:main" },
         { "sampler_name": "MainDepth", "target": "minecraft:main", "use_depth_buffer": true }
       ],
       "output": "swap",
       "uniforms": {
-        "PostRenderBlurUniforms": [
+        "PreEntityBlurUniforms": [
           { "name": "mvInverse",         "type": "matrix4x4", "value": [1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1] },
           { "name": "projInverse",       "type": "matrix4x4", "value": [1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1] },
           { "name": "prevModelView",     "type": "matrix4x4", "value": [1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1] },

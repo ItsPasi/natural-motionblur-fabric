@@ -12,6 +12,7 @@ import net.minecraft.client.renderer.chunk.ChunkSectionsToRender;
 import net.minecraft.client.renderer.state.level.CameraRenderState;
 import net.minecraft.client.renderer.state.level.LevelRenderState;
 import net.natural.motionblur.ShaderManager;
+import net.natural.motionblur.recording.RecordingShaderManager;
 import net.natural.motionblur.config.ConfigEntries;
 import net.natural.motionblur.config.ConfigManager;
 import org.joml.Matrix4f;
@@ -26,8 +27,10 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 @Mixin(LevelRenderer.class)
 public class MixinLevelRenderer {
 
-    @Unique private final Matrix4f prevModelView  = new Matrix4f();
-    @Unique private final Matrix4f prevProjection = new Matrix4f();
+    @Unique private final Matrix4f prevModelView     = new Matrix4f();
+    @Unique private final Matrix4f prevProjection    = new Matrix4f();
+    @Unique private final Matrix4f scratchModelView  = new Matrix4f();
+    @Unique private final Matrix4f scratchProjection = new Matrix4f();
     @Unique private double prevCamX, prevCamY, prevCamZ;
 
     @Inject(method = "renderLevel", at = @At("HEAD"))
@@ -39,6 +42,7 @@ public class MixinLevelRenderer {
             ChunkSectionsToRender chunkSectionsToRender, CallbackInfo ci) {
 
         ShaderManager.captureAllocator(resourceAllocator);
+        RecordingShaderManager.captureAllocator(resourceAllocator);
         ShaderManager.beginFrame();
 
         double cx = cameraState.pos.x();
@@ -49,32 +53,26 @@ public class MixinLevelRenderer {
         float dy = (float)(cy - prevCamY);
         float dz = (float)(cz - prevCamZ);
 
-        Matrix4f modelView = new Matrix4f(modelViewMatrix);
-        Matrix4f projection = new Matrix4f(cameraState.projectionMatrix);
+        scratchModelView.set(modelViewMatrix);
+        scratchProjection.set(cameraState.projectionMatrix);
 
         ShaderManager.setFrameMotionBlur(
-                modelView, prevModelView,
-                projection, prevProjection,
+                scratchModelView, prevModelView,
+                scratchProjection, prevProjection,
                 dx, dy, dz);
 
-        prevModelView.set(modelView);
-        prevProjection.set(projection);
+        prevModelView.set(scratchModelView);
+        prevProjection.set(scratchProjection);
         prevCamX = cx;
         prevCamY = cy;
         prevCamZ = cz;
     }
 
-    // Render Blur before Entities
+    // Apply pre-entity blur.
     @Inject(method = "submitEntities", at = @At("HEAD"))
-    private void naturalMotionBlur$beforeSubmitEntities(
-            PoseStack poseStack,
-            LevelRenderState levelRenderState,
-            SubmitNodeCollector output,
-            CallbackInfo ci
-    ) {
-        // Switch for different shader modes
+    private void naturalMotionBlur$beforeSubmitEntities(PoseStack poseStack, LevelRenderState levelRenderState, SubmitNodeCollector output, CallbackInfo ci) {
         ConfigEntries config = ConfigManager.getConfig();
-        if (config.blurAlgorithm != ConfigEntries.BlurAlgorithm.FRAME_BLENDING) {
+        if (config.blurAlgorithm == ConfigEntries.BlurAlgorithm.VELOCITY_BASED) {
             if (naturalMotionBlur$shouldUseSpecialSingleBlur()) {
                 ShaderManager.applyF5EntityRideBlur();
             } else {
@@ -83,23 +81,12 @@ public class MixinLevelRenderer {
         }
     }
 
-    // Render Blur Over Everything
+    // Apply post-render blur
     @Inject(method = "renderLevel", at = @At("TAIL"))
-    private void naturalMotionBlur$onRenderLevelTail(
-            GraphicsResourceAllocator resourceAllocator,
-            DeltaTracker deltaTracker,
-            boolean renderOutline,
-            CameraRenderState cameraState,
-            Matrix4fc modelViewMatrix,
-            GpuBufferSlice terrainFog,
-            Vector4f fogColor,
-            boolean shouldRenderSky,
-            ChunkSectionsToRender chunkSectionsToRender,
-            CallbackInfo ci
-    ) {
-        // Switch for different shader modes
+    private void naturalMotionBlur$onRenderLevelTail(GraphicsResourceAllocator resourceAllocator, DeltaTracker deltaTracker, boolean renderOutline, CameraRenderState cameraState, Matrix4fc modelViewMatrix, GpuBufferSlice terrainFog, Vector4f fogColor, boolean shouldRenderSky, ChunkSectionsToRender chunkSectionsToRender, CallbackInfo ci) {
         ConfigEntries config = ConfigManager.getConfig();
-        if (config.blurAlgorithm == ConfigEntries.BlurAlgorithm.FRAME_BLENDING || !naturalMotionBlur$shouldUseSpecialSingleBlur()) {
+        if (config.blurAlgorithm != ConfigEntries.BlurAlgorithm.VELOCITY_BASED
+                || !naturalMotionBlur$shouldUseSpecialSingleBlur()) {
             ShaderManager.applyPostRenderBlur();
         }
         ShaderManager.clearFrameAllocator();
@@ -108,11 +95,7 @@ public class MixinLevelRenderer {
     @Unique
     private boolean naturalMotionBlur$shouldUseSpecialSingleBlur() {
         Minecraft client = Minecraft.getInstance();
-
-        if (client.options.getCameraType() != CameraType.FIRST_PERSON) {
-            return true;
-        }
-
+        if (client.options.getCameraType() != CameraType.FIRST_PERSON) return true;
         return client.player != null && client.player.isPassenger();
     }
 }

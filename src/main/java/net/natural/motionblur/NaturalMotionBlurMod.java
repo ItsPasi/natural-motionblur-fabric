@@ -5,6 +5,7 @@ import net.natural.motionblur.config.CommandManager;
 import net.natural.motionblur.config.ConfigManager;
 import net.natural.motionblur.config.EventManager;
 import net.natural.motionblur.config.KeybindingManager;
+import net.natural.motionblur.recording.RecordingShaderManager;
 
 public class NaturalMotionBlurMod implements ClientModInitializer {
     public static final String ID = "naturalmotionblur";
@@ -15,5 +16,8 @@ public class NaturalMotionBlurMod implements ClientModInitializer {
         KeybindingManager.registerKeybindings();
         CommandManager.registerCommands();
         EventManager.registerEvents();
+
+        Runtime.getRuntime().addShutdownHook(new Thread(RecordingShaderManager::destroy,
+                "nmb-recording-output-cleanup"));
     }
 }
