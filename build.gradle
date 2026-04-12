@@ -18,11 +18,10 @@ version = getVersion()
 group = project.maven_group
 
 repositories {
+	maven { url "https://maven.terraformersmc.com/"}
 	maven { url "https://maven.isxander.dev/releases" }
 	maven { url "https://maven.terraformersmc.com/releases/" }
-	maven {
-		url = "https://api.modrinth.com/maven"
-	}
+	maven { url "https://api.modrinth.com/maven"}
 	maven { url 'https://jitpack.io' }
 	flatDir {
 		dirs 'libs'
@@ -34,9 +33,8 @@ dependencies {
 	implementation "net.fabricmc:fabric-loader:${project.loader_version}"
 	implementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_api_version}"
 
-	implementation("dev.isxander:yet-another-config-lib:${project.yacl_version}") {
-		exclude(group: "net.fabricmc.fabric-api")
-	}
+	implementation("com.terraformersmc:modmenu:${project.modmenu_version}")
+	implementation "dev.isxander:yet-another-config-lib:${project.yacl_version}"
 }
 
 processResources {

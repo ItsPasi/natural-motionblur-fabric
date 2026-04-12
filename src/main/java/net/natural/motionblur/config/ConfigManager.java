@@ -13,6 +13,7 @@ import dev.isxander.yacl3.api.controller.FloatSliderControllerBuilder;
 import dev.isxander.yacl3.api.controller.IntegerSliderControllerBuilder;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
 import net.natural.motionblur.recording.RecordingShaderManager;
 import org.apache.commons.io.FileUtils;
@@ -38,15 +39,19 @@ public class ConfigManager {
     }
 
     // Config Screen Interface
-    public static void openConfigScreen() {
+    public static Screen createConfigScreen(Screen parent) {
         ConfigEntries cfg = getConfig();
 
         var refreshRateScalingOption = Option.<Boolean>createBuilder()
                 .name(Component.literal("Refresh Rate Scaling"))
-                .description(OptionDescription.of(Component.literal("""
-                        If enabled, motion blur strength will adjust automatically based on FPS relative to your monitor's refresh rate.
-                        \s
-                        When disabled, the blur strength is fixed to the set value.""")))
+                .description(OptionDescription.of(Component.empty()
+                        .append(Component.literal("If enabled, motion blur strength will adjust automatically based on FPS relative to your monitor's refresh rate. This helps in preventing stroboscopic effect visibility on high FPS.\n\n"))
+                        .append(Component.literal("When disabled, the blur strength is fixed to the set value.\n\n"))
+                        .append(Component.literal("Example\n").withStyle(s -> s.withColor(0x5599FF).withBold(true)))
+                        .append(Component.literal("1. ").withStyle(s -> s.withColor(0x5599FF).withBold(true)))
+                        .append(Component.literal("600 FPS on a 60 Hz monitor → strength is increased by 10x\n").withStyle(s -> s.withColor(0x5599FF)))
+                        .append(Component.literal("2. ").withStyle(s -> s.withColor(0x5599FF).withBold(true)))
+                        .append(Component.literal("60 FPS or less on a 60 Hz monitor → strength is not changed").withStyle(s -> s.withColor(0x5599FF)))))
                 .binding(true, () -> cfg.refreshRateScaling, newValue -> cfg.refreshRateScaling = newValue)
                 .controller(opt -> BooleanControllerBuilder.create(opt).coloured(true))
                 .available(cfg.blurAlgorithm == ConfigEntries.BlurAlgorithm.VELOCITY_BASED)
@@ -67,16 +72,16 @@ public class ConfigManager {
                 .name(Component.literal("Blur Algorithm"))
                 .description(OptionDescription.of(Component.empty()
                         .append(Component.literal("Changes how motion blur is rendered.\n\n"))
-                        .append(Component.literal("Velocity Based").withStyle(style -> style.withColor(0xFFFF55))).append(Component.literal(" (Recommended)").withStyle(style -> style.withColor(0xAAAAAA)))
+                        .append(Component.literal("Velocity Based").withStyle(style -> style.withColor(0x5599FF).withBold(true))).append(Component.literal(" (Recommended)").withStyle(style -> style.withColor(0xAAAAAA)))
                         .append(Component.literal("\nUses velocity information to blur in the direction of movement.\n"))
                         .append(Component.literal("The same technique used by shader packs like BSL, Complementary and Labymod client. Improved upon to fix issues with excessive blur.\n\n").withStyle(style -> style.withColor(0xAAAAAA).withItalic(true)))
-                        .append(Component.literal("Frame Blending").withStyle(style -> style.withColor(0xFFFF55)))
+                        .append(Component.literal("Frame Blending").withStyle(style -> style.withColor(0x5599FF).withBold(true)))
                         .append(Component.literal("\nBlends additional frames between each displayed frame into the current image.\n"))
                         .append(Component.literal("Recreates the effect of post-processing tools like blur by f0e, Premiere Pro, and DaVinci Resolve.\n\n").withStyle(style -> style.withColor(0xAAAAAA).withItalic(true)))
-                        .append(Component.literal("Accumulation MAX").withStyle(style -> style.withColor(0xFF5555)))
+                        .append(Component.literal("Accumulation MAX").withStyle(style -> style.withColor(0xFF5555).withBold(true)))
                         .append(Component.literal("\nCreates a blur trail with high brightness.\n"))
                         .append(Component.literal("Matches LABYMOD MIX, LUNAR V1, BLC 2.0.\n\n").withStyle(style -> style.withColor(0xAAAAAA).withItalic(true)))
-                        .append(Component.literal("Accumulation MIX").withStyle(style -> style.withColor(0xFF5555)))
+                        .append(Component.literal("Accumulation MIX").withStyle(style -> style.withColor(0xFF5555).withBold(true)))
                         .append(Component.literal("\nCreates a blur trail with even brightness.\n"))
                         .append(Component.literal("Matches LABYMOD MAX, LUNAR V2/V3, BLC 3.0/Badlion.").withStyle(style -> style.withColor(0xAAAAAA).withItalic(true)))))
                 .binding(ConfigEntries.BlurAlgorithm.VELOCITY_BASED, () -> cfg.blurAlgorithm, newValue -> cfg.blurAlgorithm = newValue)
@@ -87,14 +92,14 @@ public class ConfigManager {
                 .controller(opt -> EnumControllerBuilder.create(opt)
                         .enumClass(ConfigEntries.BlurAlgorithm.class)
                         .valueFormatter(value -> switch (value) {
-                            case VELOCITY_BASED  -> Component.literal("Velocity Based").withStyle(s -> s.withColor(0xFFFF55));
-                            case FRAME_BLENDING  -> Component.literal("Frame Blending").withStyle(s -> s.withColor(0xFFFF55));
+                            case VELOCITY_BASED  -> Component.literal("Velocity Based").withStyle(s -> s.withColor(0x5599FF));
+                            case FRAME_BLENDING  -> Component.literal("Frame Blending").withStyle(s -> s.withColor(0x5599FF));
                             case ACCUMULATION_MAX -> Component.literal("Accumulation MAX").withStyle(s -> s.withColor(0xFF5555));
                             case ACCUMULATION_MIX -> Component.literal("Accumulation MIX").withStyle(s -> s.withColor(0xFF5555));
                         }))
                 .build();
 
-        var screen = YetAnotherConfigLib.createBuilder()
+        return YetAnotherConfigLib.createBuilder()
                 .title(Component.literal("Natural Motion Blur"))
                 .category(ConfigCategory.createBuilder()
                         .name(Component.literal("Motion Blur Options"))
@@ -124,15 +129,15 @@ public class ConfigManager {
                                         .append(Component.literal("3. ").withStyle(s -> s.withColor(0x5599FF).withBold(true)))
                                         .append(Component.literal("In OBS, add a new Source and select 'Spout2 Capture'\n").withStyle(s -> s.withColor(0x5599FF)))
                                         .append(Component.literal("4. ").withStyle(s -> s.withColor(0x5599FF).withBold(true)))
-                                        .append(Component.literal("Enable this option - the feed should appear in OBS automatically.\n\n").withStyle(s -> s.withColor(0x5599FF)))
+                                        .append(Component.literal("Enable this option - the feed should appear in OBS automatically\n\n").withStyle(s -> s.withColor(0x5599FF)))
                                         .append(Component.literal("⚠ Disclaimer\n").withStyle(s -> s.withColor(0xFF5555).withBold(true)))
                                         .append(Component.literal("Since this runs an additional frame blending layer for the OBS output, follow either of these rules for ideal results:\n\n").withStyle(s -> s.withColor(0xFF5555)))
                                         .append(Component.literal("A. ").withStyle(s -> s.withColor(0xFF5555).withBold(true)))
-                                        .append(Component.literal("Turn off motion blur and play at any FPS setting.\n").withStyle(s -> s.withColor(0xFF5555)))
+                                        .append(Component.literal("Turn off motion blur and play at any FPS setting\n").withStyle(s -> s.withColor(0xFF5555)))
                                         .append(Component.literal("B. ").withStyle(s -> s.withColor(0xFF5555).withBold(true)))
-                                        .append(Component.literal("Turn on any motion blur and limit FPS to your monitor's refresh rate.\n").withStyle(s -> s.withColor(0xFF5555)))
+                                        .append(Component.literal("Turn on any motion blur and limit FPS to your monitor's refresh rate\n").withStyle(s -> s.withColor(0xFF5555)))
                                         .append(Component.literal("C. ").withStyle(s -> s.withColor(0xFF5555).withBold(true)))
-                                        .append(Component.literal("Turn on velocity blur, turn off refresh rate scaling and play at any FPS setting.").withStyle(s -> s.withColor(0xFF5555)))))
+                                        .append(Component.literal("Turn on velocity blur, turn off refresh rate scaling and play at any FPS setting").withStyle(s -> s.withColor(0xFF5555)))))
                                 .binding(false, () -> cfg.recordingOverlayEnabled, newVal -> {
                                     cfg.recordingOverlayEnabled = newVal;
                                     if (!newVal) RecordingShaderManager.destroy();
@@ -151,8 +156,11 @@ public class ConfigManager {
                         .build())
                 .save(ConfigManager::saveConfig)
                 .build()
-                .generateScreen(null);
+                .generateScreen(parent);
+    }
 
+    public static void openConfigScreen() {
+        var screen = createConfigScreen(null);
         Minecraft.getInstance().schedule(() ->
                 Minecraft.getInstance().setScreen(screen)
         );
