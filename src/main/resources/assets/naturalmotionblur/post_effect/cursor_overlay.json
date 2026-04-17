@@ -1,0 +1,35 @@
+{
+  "targets": { "swap": {} },
+  "passes": [
+    {
+      "vertex_shader": "minecraft:post/screenquad",
+      "fragment_shader": "naturalmotionblur:post/cursor_overlay",
+      "inputs": [
+        { "sampler_name": "Main", "target": "minecraft:main" },
+        { "sampler_name": "Cursor", "target": "minecraft:main" }
+      ],
+      "output": "swap",
+      "uniforms": {
+        "CursorOverlayUniforms": [
+          { "name": "cursorX",       "type": "float", "value": 0.0 },
+          { "name": "cursorY",       "type": "float", "value": 0.0 },
+          { "name": "cursorScale",   "type": "float", "value": 1.0 },
+          { "name": "cursorVisible", "type": "float", "value": 0.0 },
+          { "name": "prevCursorX",   "type": "float", "value": 0.0 },
+          { "name": "prevCursorY",   "type": "float", "value": 0.0 },
+          { "name": "blurStrength",  "type": "float", "value": 1.0 },
+          { "name": "padding0",      "type": "float", "value": 0.0 }
+        ]
+      }
+    },
+    {
+      "vertex_shader": "minecraft:post/screenquad",
+      "fragment_shader": "minecraft:post/blit",
+      "inputs": [{ "sampler_name": "In", "target": "swap" }],
+      "output": "minecraft:main",
+      "uniforms": {
+        "BlitConfig": [{ "name": "ColorModulate", "type": "vec4", "value": [1,1,1,1] }]
+      }
+    }
+  ]
+}

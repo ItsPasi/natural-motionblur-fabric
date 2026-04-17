@@ -4,11 +4,11 @@
   "package": "net.natural.motionblur.mixin",
   "compatibilityLevel": "JAVA_21",
   "mixins": [
-    "MixinGameRenderer",
     "MixinLevelRenderer",
-    "PostEffectPassAccessor",
-    "PostEffectProcessorAccessor",
-    "ShaderLoaderAccessor"
+    "PostPassAccessor",
+    "PostChainAccessor",
+    "ShaderManagerAccessor",
+    "MixinMinecraft"
   ],
   "client": [],
   "injectors": {
