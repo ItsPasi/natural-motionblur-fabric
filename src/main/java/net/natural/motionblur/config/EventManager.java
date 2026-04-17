@@ -2,7 +2,7 @@ package net.natural.motionblur.config;
 
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
-import net.minecraft.text.Text;
+import net.minecraft.network.chat.Component;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -38,7 +38,7 @@ public class EventManager {
                 if (tickCounter >= TICK_DELAY) {
                     // Display accumulated error messages
                     for (String errorMessage : errorMessagesToDisplay) {
-                        client.player.sendMessage(Text.literal("§c" + errorMessage), false);
+                        client.player.displayClientMessage(Component.literal("§c" + errorMessage), false);
                     }
                     // Mark messages as sent for this join
                     delayMessageSent = true;
