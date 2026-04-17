@@ -136,7 +136,7 @@ public class FrameBlendingManager {
 
         int desired = 1;
         if (smoothedFPS > 0.0f && refreshRate > 0) {
-            desired = Math.clamp(Math.round(smoothedFPS / refreshRate), 1, MAX_HISTORY);
+            desired = Math.clamp((int)Math.ceil(smoothedFPS / refreshRate), 1, MAX_HISTORY);
         }
 
         if (desired == lockedN) {
