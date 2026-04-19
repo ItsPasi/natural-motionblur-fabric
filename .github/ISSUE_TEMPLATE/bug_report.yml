@@ -6,7 +6,7 @@ body:
   - type: markdown
     attributes:
       value: >-
-        
+        # BUG REPORT
   - type: textarea
     id: description
     attributes:
