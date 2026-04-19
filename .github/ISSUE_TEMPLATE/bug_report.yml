@@ -6,8 +6,7 @@ body:
   - type: markdown
     attributes:
       value: >-
-        # READ THIS BEFORE YOU POST AN ISSUE!
-      
+        
   - type: textarea
     id: description
     attributes:
