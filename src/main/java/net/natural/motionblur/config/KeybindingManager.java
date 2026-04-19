@@ -1,7 +1,7 @@
 package net.natural.motionblur.config;
 
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
-import net.fabricmc.fabric.api.client.keymapping.v1.KeyMappingHelper;
+import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
 import net.minecraft.client.KeyMapping;
 import com.mojang.blaze3d.platform.InputConstants;
 
@@ -9,7 +9,7 @@ public class KeybindingManager {
     private static KeyMapping toggleKeybinding;
 
     public static void registerKeybindings() {
-        toggleKeybinding = KeyMappingHelper.registerKeyMapping(new KeyMapping(
+        toggleKeybinding = KeyBindingHelper.registerKeyBinding(new KeyMapping(
                 "Toggle Natural Motion Blur",
                 InputConstants.Type.KEYSYM,
                 InputConstants.KEY_B,

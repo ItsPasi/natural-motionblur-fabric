@@ -3,20 +3,18 @@ package net.natural.motionblur.mixin;
 import com.mojang.blaze3d.buffers.GpuBufferSlice;
 import com.mojang.blaze3d.resource.GraphicsResourceAllocator;
 import com.mojang.blaze3d.vertex.PoseStack;
+import net.minecraft.client.Camera;
 import net.minecraft.client.CameraType;
 import net.minecraft.client.DeltaTracker;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.LevelRenderer;
 import net.minecraft.client.renderer.SubmitNodeCollector;
-import net.minecraft.client.renderer.chunk.ChunkSectionsToRender;
-import net.minecraft.client.renderer.state.level.CameraRenderState;
-import net.minecraft.client.renderer.state.level.LevelRenderState;
+import net.minecraft.client.renderer.state.LevelRenderState;
 import net.natural.motionblur.ShaderManager;
 import net.natural.motionblur.recording.RecordingShaderManager;
 import net.natural.motionblur.config.ConfigEntries;
 import net.natural.motionblur.config.ConfigManager;
 import org.joml.Matrix4f;
-import org.joml.Matrix4fc;
 import org.joml.Vector4f;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Unique;
@@ -34,32 +32,29 @@ public class MixinLevelRenderer {
     @Unique private double prevCamX, prevCamY, prevCamZ;
 
     @Inject(method = "renderLevel", at = @At("HEAD"))
-    private void onRenderHead(
-            GraphicsResourceAllocator resourceAllocator, DeltaTracker deltaTracker,
-            boolean renderOutline, CameraRenderState cameraState,
-            Matrix4fc modelViewMatrix, GpuBufferSlice terrainFog,
-            Vector4f fogColor, boolean shouldRenderSky,
-            ChunkSectionsToRender chunkSectionsToRender, CallbackInfo ci) {
+    private void naturalMotionBlur$onRenderLevelHead(GraphicsResourceAllocator resourceAllocator, DeltaTracker deltaTracker, boolean renderOutline, Camera camera, Matrix4f modelViewMatrix, Matrix4f projectionMatrix, Matrix4f frustumMatrix, GpuBufferSlice terrainFog, Vector4f fogColor, boolean shouldRenderSky, CallbackInfo ci) {
 
         ShaderManager.captureAllocator(resourceAllocator);
         RecordingShaderManager.captureAllocator(resourceAllocator);
         ShaderManager.beginFrame();
 
-        double cx = cameraState.pos.x();
-        double cy = cameraState.pos.y();
-        double cz = cameraState.pos.z();
+        var camPos = camera.position();
+        double cx = camPos.x();
+        double cy = camPos.y();
+        double cz = camPos.z();
 
         float dx = (float)(cx - prevCamX);
         float dy = (float)(cy - prevCamY);
         float dz = (float)(cz - prevCamZ);
 
         scratchModelView.set(modelViewMatrix);
-        scratchProjection.set(cameraState.projectionMatrix);
+        scratchProjection.set(projectionMatrix);
 
         ShaderManager.setFrameMotionBlur(
                 scratchModelView, prevModelView,
                 scratchProjection, prevProjection,
-                dx, dy, dz);
+                dx, dy, dz
+        );
 
         prevModelView.set(scratchModelView);
         prevProjection.set(scratchProjection);
@@ -83,7 +78,7 @@ public class MixinLevelRenderer {
 
     // Apply post-render blur
     @Inject(method = "renderLevel", at = @At("TAIL"))
-    private void naturalMotionBlur$onRenderLevelTail(GraphicsResourceAllocator resourceAllocator, DeltaTracker deltaTracker, boolean renderOutline, CameraRenderState cameraState, Matrix4fc modelViewMatrix, GpuBufferSlice terrainFog, Vector4f fogColor, boolean shouldRenderSky, ChunkSectionsToRender chunkSectionsToRender, CallbackInfo ci) {
+    private void naturalMotionBlur$onRenderLevelTail(GraphicsResourceAllocator resourceAllocator, DeltaTracker deltaTracker, boolean renderOutline, Camera camera, Matrix4f modelViewMatrix, Matrix4f projectionMatrix, Matrix4f frustumMatrix, GpuBufferSlice terrainFog, Vector4f fogColor, boolean shouldRenderSky, CallbackInfo ci) {
         ConfigEntries config = ConfigManager.getConfig();
         if (config.blurAlgorithm != ConfigEntries.BlurAlgorithm.VELOCITY_BASED
                 || !naturalMotionBlur$shouldUseSpecialSingleBlur()) {

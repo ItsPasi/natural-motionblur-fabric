@@ -22,9 +22,9 @@ import net.natural.motionblur.mixin.ShaderManagerAccessor;
 import net.natural.motionblur.util.GpuBufferUtil;
 import org.jspecify.annotations.NonNull;
 import org.jspecify.annotations.Nullable;
+import org.lwjgl.glfw.GLFW;
 
 import java.lang.reflect.Field;
-import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.util.List;
 import java.util.Map;
@@ -65,6 +65,15 @@ public class RecordingShaderManager {
     private static float   recPrevRawCursorY       = 0;
     private static boolean recPrevRawCursorVisible = false;
 
+    private static long    cachedGlfwHandle        = 0;
+    private static boolean glfwHandleResolved      = false;
+
+    private static Method cachedGetTextureMethod   = null;
+    private static Method cachedGetViewMethod      = null;
+    private static Method cachedRegister2Method    = null;
+    private static Object cachedCursorTexture      = null;
+    private static boolean textureMethodsResolved  = false;
+
     public static void captureAllocator(GraphicsResourceAllocator allocator) {
         savedAllocator = allocator;
     }
@@ -85,12 +94,12 @@ public class RecordingShaderManager {
 
             copyTexture(main, cleanFrameTarget);
             applyIsolatedFrameBlending(main, realFps, targetHz, w, h);
-            copyTexture(cleanFrameTarget, main);
 
             if (recHasFirstFrame) {
                 int glTexId = GpuTextureHelper.getGlId(recordingTarget.getColorTexture());
                 if (glTexId != 0) SpoutBridge.sendTexture(glTexId, w, h);
             }
+            copyTexture(cleanFrameTarget, main);
         } finally {
             savedAllocator = null;
         }
@@ -152,7 +161,7 @@ public class RecordingShaderManager {
 
         int desired = 1;
         if (recSmoothedFPS > 0.0f && refreshRate > 0) {
-            desired = Math.max(1, Math.min(MAX_HISTORY, Math.round(recSmoothedFPS / refreshRate)));
+            desired = Math.clamp(Math.round(recSmoothedFPS / refreshRate), 1, MAX_HISTORY);
         }
 
         if (desired == recLockedN) {
@@ -216,6 +225,13 @@ public class RecordingShaderManager {
         if (recCursorTextureInput == null) {
             recCursorTextureInput = new ResourceTextureInput("Cursor", CURSOR_TEXTURE_ID);
         }
+
+        GpuTextureView testView = getTextureView(mc, CURSOR_TEXTURE_ID);
+        if (testView == null) {
+            if (savedCursorUBO != null) cursorUniforms.put("CursorOverlayUniforms", savedCursorUBO);
+            return;
+        }
+
         PostPass.Input savedCursorSampler = swapSampler(cursorPass, "Cursor", recCursorTextureInput);
 
         recCursorChain.process(target, savedAllocator);
@@ -247,21 +263,22 @@ public class RecordingShaderManager {
 
     private static CursorState getCursorState(Minecraft mc, int renderWidth, int renderHeight) {
         try {
-            Object mouse = getFieldValue(mc);
-            if (mouse == null) return CursorState.HIDDEN;
+            long window = getGlfwWindowHandle(mc);
+            if (window == 0) return CursorState.HIDDEN;
 
-            boolean locked = invokeBoolean(mouse);
-            if (locked) return CursorState.HIDDEN;
+            int cursorMode = GLFW.glfwGetInputMode(window, GLFW.GLFW_CURSOR);
+            if (cursorMode == GLFW.GLFW_CURSOR_DISABLED) return CursorState.HIDDEN;
 
-            double rawX = invokeDouble(mouse, "getX", "xpos");
-            double rawY = invokeDouble(mouse, "getY", "ypos");
+            double[] xArr = new double[1];
+            double[] yArr = new double[1];
+            GLFW.glfwGetCursorPos(window, xArr, yArr);
 
             double winW = mc.getWindow().getWidth();
             double winH = mc.getWindow().getHeight();
             if (winW <= 0 || winH <= 0) return CursorState.HIDDEN;
 
-            float x = (float)(rawX * renderWidth  / winW);
-            float y = (float)(rawY * renderHeight / winH);
+            float x = (float) (xArr[0] * renderWidth / winW);
+            float y = (float) (yArr[0] * renderHeight / winH);
             if (x < -32 || y < -32 || x > renderWidth + 32 || y > renderHeight + 32)
                 return CursorState.HIDDEN;
 
@@ -271,44 +288,33 @@ public class RecordingShaderManager {
         }
     }
 
-    private static Object getFieldValue(Object instance) throws NoSuchFieldException, IllegalAccessException {
-        Class<?> type = instance.getClass();
-        while (type != null) {
-            try {
-                Field field = type.getDeclaredField("mouseHandler");
-                field.setAccessible(true);
-                return field.get(instance);
-            } catch (NoSuchFieldException ignored) {
+    private static long getGlfwWindowHandle(Minecraft mc) {
+        if (glfwHandleResolved) return cachedGlfwHandle;
+        try {
+            Object windowObj = mc.getWindow();
+            Class<?> type = windowObj.getClass();
+            while (type != null) {
+                for (Field f : type.getDeclaredFields()) {
+                    if (f.getType() == long.class) {
+                        f.setAccessible(true);
+                        long val = f.getLong(windowObj);
+                        if (val > 0) {
+                            try {
+                                GLFW.glfwGetInputMode(val, GLFW.GLFW_CURSOR);
+                                cachedGlfwHandle = val;
+                                glfwHandleResolved = true;
+                                return cachedGlfwHandle;
+                            } catch (Throwable ignored) {
+                            }
+                        }
+                    }
+                }
                 type = type.getSuperclass();
             }
+        } catch (Throwable ignored) {
         }
-        throw new NoSuchFieldException("mouseHandler");
-    }
-
-    private static double invokeDouble(Object target, String... methodNames)
-            throws InvocationTargetException, IllegalAccessException, NoSuchMethodException {
-        for (String name : methodNames) {
-            try {
-                Method m = target.getClass().getMethod(name);
-                m.setAccessible(true);
-                Object v = m.invoke(target);
-                if (v instanceof Number n) return n.doubleValue();
-            } catch (NoSuchMethodException ignored) {}
-        }
-        throw new NoSuchMethodException(String.join(", ", methodNames));
-    }
-
-    private static boolean invokeBoolean(Object target)
-            throws InvocationTargetException, IllegalAccessException {
-        for (String name : new String[]{"isCursorLocked", "isMouseGrabbed", "isGrabbed"}) {
-            try {
-                Method m = target.getClass().getMethod(name);
-                m.setAccessible(true);
-                Object v = m.invoke(target);
-                if (v instanceof Boolean b) return b;
-            } catch (NoSuchMethodException ignored) {}
-        }
-        return false;
+        glfwHandleResolved = true;
+        return 0;
     }
 
     private record CursorState(float x, float y, float scale, boolean visible) {
@@ -344,6 +350,13 @@ public class RecordingShaderManager {
         invalidateFrameBlending();
         lastW = 0;
         lastH = 0;
+        cachedGlfwHandle = 0;
+        glfwHandleResolved = false;
+        cachedGetTextureMethod = null;
+        cachedGetViewMethod = null;
+        cachedRegister2Method = null;
+        cachedCursorTexture = null;
+        textureMethodsResolved = false;
         SpoutBridge.shutdown();
     }
 
@@ -469,39 +482,148 @@ public class RecordingShaderManager {
     private static GpuTextureView getTextureView(Minecraft mc, Identifier textureId) {
         try {
             Object textureManager = mc.getTextureManager();
-            try {
-                Method register = textureManager.getClass().getMethod("registerTexture", Identifier.class);
-                register.setAccessible(true);
-                register.invoke(textureManager, textureId);
-            } catch (NoSuchMethodException ignored) {}
 
-            Method getTexture = textureManager.getClass().getMethod("getTexture", Identifier.class);
-            getTexture.setAccessible(true);
-            Object texture = getTexture.invoke(textureManager, textureId);
+            if (!textureMethodsResolved) {
+                resolveTextureMethods(textureManager, textureId);
+                textureMethodsResolved = true;
+            }
+
+            if (cachedGetTextureMethod == null) return null;
+
+            Object texture;
+            try {
+                texture = cachedGetTextureMethod.invoke(textureManager, textureId);
+            } catch (java.lang.reflect.InvocationTargetException ite) {
+                if (registerCursorTexture(textureManager, textureId)) {
+                    texture = cachedGetTextureMethod.invoke(textureManager, textureId);
+                } else {
+                    return null;
+                }
+            }
             if (texture == null) return null;
 
-            try {
-                Method setClamp = texture.getClass().getMethod("setClamp", boolean.class);
-                setClamp.setAccessible(true);
-                setClamp.invoke(texture, true);
-            } catch (NoSuchMethodException ignored) {}
+            ensureTextureLoaded(texture, mc);
 
-            try {
-                Method setFilter = texture.getClass().getMethod("setFilter", boolean.class, boolean.class);
-                setFilter.setAccessible(true);
-                setFilter.invoke(texture, false, false);
-            } catch (NoSuchMethodException ignored) {}
-
-            for (String methodName : new String[]{"getTextureView", "getGlTextureView"}) {
-                try {
-                    Method m = texture.getClass().getMethod(methodName);
-                    m.setAccessible(true);
-                    Object view = m.invoke(texture);
-                    if (view instanceof GpuTextureView gpuTextureView) return gpuTextureView;
-                } catch (NoSuchMethodException ignored) {}
+            if (cachedGetViewMethod == null) {
+                for (Method m : texture.getClass().getMethods()) {
+                    if (m.getParameterCount() == 0
+                            && GpuTextureView.class.isAssignableFrom(m.getReturnType())) {
+                        m.setAccessible(true);
+                        cachedGetViewMethod = m;
+                        break;
+                    }
+                }
+                if (cachedGetViewMethod == null) {
+                    return null;
+                }
             }
-        } catch (Throwable ignored) {}
+
+            Object view = cachedGetViewMethod.invoke(texture);
+            if (view instanceof GpuTextureView gpuTextureView) return gpuTextureView;
+        } catch (Throwable ignored) {
+        }
         return null;
     }
 
+    private static boolean registerCursorTexture(Object textureManager, Identifier textureId) {
+        try {
+            if (cachedRegister2Method == null) {
+                Class<?> idClass = textureId.getClass();
+                Class<?> abstractTextureClass = cachedGetTextureMethod.getReturnType();
+
+                for (Method m : textureManager.getClass().getMethods()) {
+                    if (m.getParameterCount() == 2
+                            && m.getReturnType() == void.class
+                            && m.getParameterTypes()[0].isAssignableFrom(idClass)
+                            && m.getParameterTypes()[1].isAssignableFrom(abstractTextureClass)) {
+                        m.setAccessible(true);
+                        cachedRegister2Method = m;
+                        break;
+                    }
+                }
+            }
+            if (cachedRegister2Method == null) {
+                return false;
+            }
+
+            if (cachedCursorTexture == null) {
+                Class<?> abstractTextureClass = cachedGetTextureMethod.getReturnType();
+                cachedCursorTexture = createSimpleTexture(abstractTextureClass, textureId);
+                if (cachedCursorTexture == null) {
+                    return false;
+                }
+            }
+
+            cachedRegister2Method.invoke(textureManager, textureId, cachedCursorTexture);
+            return true;
+        } catch (Throwable ignored) {
+            return false;
+        }
+    }
+
+    private static Object createSimpleTexture(Class<?> abstractTextureClass, Identifier textureId) {
+        Class<?> idClass = textureId.getClass();
+
+        try {
+            var ctor = abstractTextureClass.getDeclaredConstructor(idClass);
+            ctor.setAccessible(true);
+            return ctor.newInstance(textureId);
+        } catch (Throwable ignored) {
+        }
+
+        String baseName = abstractTextureClass.getName();
+        if (baseName.startsWith("net.minecraft.class_")) {
+            try {
+                int baseNum = Integer.parseInt(baseName.substring("net.minecraft.class_".length()));
+                for (int offset : new int[]{-1, 1, -2, 2, -3, 3, -5, 5, -10, 10}) {
+                    String candidateName = "net.minecraft.class_" + (baseNum + offset);
+                    try {
+                        Class<?> candidate = Class.forName(candidateName);
+                        if (abstractTextureClass.isAssignableFrom(candidate)) {
+                            try {
+                                var ctor = candidate.getDeclaredConstructor(idClass);
+                                ctor.setAccessible(true);
+                                return ctor.newInstance(textureId);
+                            } catch (ReflectiveOperationException ignored) {}
+                        }
+                    } catch (ClassNotFoundException ignored) {}
+                }
+            } catch (NumberFormatException ignored) {}
+        }
+
+        return null;
+    }
+
+    private static void ensureTextureLoaded(Object texture, Minecraft mc) {
+        try {
+            Object resourceManager = mc.getResourceManager();
+
+            for (Method m : texture.getClass().getMethods()) {
+                if (m.getParameterCount() == 1
+                        && m.getParameterTypes()[0].isInstance(resourceManager)
+                        && m.getReturnType() == void.class) {
+                    m.setAccessible(true);
+                    try {
+                        m.invoke(texture, resourceManager);
+                        return;
+                    } catch (Throwable ignored) {}
+                }
+            }
+        } catch (Throwable ignored) {}
+    }
+
+    private static void resolveTextureMethods(Object textureManager, Identifier textureId) {
+        Class<?> idClass = textureId.getClass();
+
+        for (Method m : textureManager.getClass().getMethods()) {
+            if (m.getParameterCount() != 1) continue;
+            if (!m.getParameterTypes()[0].isAssignableFrom(idClass)) continue;
+            if (m.getReturnType().isPrimitive() || m.getReturnType() == void.class) continue;
+            if (Identifier.class.isAssignableFrom(m.getReturnType())) continue;
+
+            m.setAccessible(true);
+            cachedGetTextureMethod = m;
+            return;
+        }
+    }
 }

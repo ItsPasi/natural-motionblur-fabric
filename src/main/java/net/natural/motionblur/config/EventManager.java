@@ -38,7 +38,7 @@ public class EventManager {
                 if (tickCounter >= TICK_DELAY) {
                     // Display accumulated error messages
                     for (String errorMessage : errorMessagesToDisplay) {
-                        client.player.sendSystemMessage(Component.literal("§c" + errorMessage));
+                        client.player.displayClientMessage(Component.literal("§c" + errorMessage), false);
                     }
                     // Mark messages as sent for this join
                     delayMessageSent = true;
