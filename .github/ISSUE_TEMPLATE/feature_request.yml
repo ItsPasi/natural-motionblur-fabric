@@ -1,0 +1,18 @@
+name: Feature Request
+description: "For requesting new features or improvements"
+labels:
+  - T-enhancement
+  - S-needs-triage
+body:
+  - type: markdown
+    attributes:
+      value: >- 
+        This form is for requesting new features or improvements, and should not be used for bug reports or other issues.
+  - type: textarea
+    id: description
+    attributes:
+      label: Request Description
+      description: >-
+        Use this section to describe the feature or improvement that you are looking for. The description should explain
+        what problem you are trying to solve, what alternatives you have tried, and a clear and concise description
+        of what you would like changed.
