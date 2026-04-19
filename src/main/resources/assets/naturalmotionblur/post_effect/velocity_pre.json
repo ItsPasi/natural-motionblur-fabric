@@ -5,7 +5,7 @@
   "passes": [
     {
       "vertex_shader": "minecraft:post/screenquad",
-      "fragment_shader": "naturalmotionblur:post/motion_blur",
+      "fragment_shader": "naturalmotionblur:post/velocity_pre",
       "inputs": [
         {
           "sampler_name": "Main",
@@ -125,31 +125,17 @@
           ]
         },
         {
-          "name": "BlendFactor",
+          "name": "blendFactor",
           "type": "float",
           "value": [
             0.5
           ]
         },
         {
-          "name": "motionBlurSamples",
+          "name": "sampleCount",
           "type": "int",
           "value": [
             100
-          ]
-        },
-        {
-          "name": "blurAlgorithm",
-          "type": "int",
-          "value": [
-            1
-          ]
-        },
-        {
-          "name": "useDepth",
-          "type": "int",
-          "value": [
-            1
           ]
         }
       ]

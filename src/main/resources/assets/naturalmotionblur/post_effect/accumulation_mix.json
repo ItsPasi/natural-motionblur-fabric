@@ -1,0 +1,43 @@
+{
+  "targets": {
+    "swap": {},
+    "prev": {}
+  },
+  "passes": [
+    {
+      "vertex_shader": "minecraft:post/screenquad",
+      "fragment_shader": "naturalmotionblur:post/accumulation_mix",
+      "inputs": [
+        {
+          "sampler_name": "Main",
+          "target": "minecraft:main"
+        },
+        {
+          "sampler_name": "Prev",
+          "target": "prev"
+        }
+      ],
+      "output": "swap",
+      "uniforms": [
+        {
+          "name": "blendFactor",
+          "type": "float",
+          "value": [
+            1
+          ]
+        }
+      ]
+    },
+    {
+      "vertex_shader": "minecraft:post/screenquad",
+      "fragment_shader": "naturalmotionblur:post/blit",
+      "inputs": [
+        {
+          "sampler_name": "In",
+          "target": "swap"
+        }
+      ],
+      "output": "minecraft:main"
+    }
+  ]
+}

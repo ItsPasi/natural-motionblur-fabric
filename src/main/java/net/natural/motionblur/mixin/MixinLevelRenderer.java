@@ -1,11 +1,16 @@
 package net.natural.motionblur.mixin;
 
-import net.minecraft.client.render.Camera;
-import net.minecraft.client.render.GameRenderer;
-import net.minecraft.client.render.RenderTickCounter;
-import net.minecraft.client.render.WorldRenderer;
-import net.minecraft.client.util.ObjectAllocator;
+import com.mojang.blaze3d.resource.GraphicsResourceAllocator;
+import net.minecraft.client.Camera;
+import net.minecraft.client.CameraType;
+import net.minecraft.client.DeltaTracker;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.renderer.GameRenderer;
+import net.minecraft.client.renderer.LevelRenderer;
 import net.natural.motionblur.ShaderManager;
+import net.natural.motionblur.config.ConfigEntries;
+import net.natural.motionblur.config.ConfigManager;
+import net.natural.motionblur.recording.RecordingShaderManager;
 import org.joml.Matrix4f;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Unique;
@@ -13,38 +18,99 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
-@Mixin(WorldRenderer.class)
+@Mixin(LevelRenderer.class)
 public class MixinLevelRenderer {
 
-    @Unique private final Matrix4f prevModelView  = new Matrix4f();
-    @Unique private final Matrix4f prevProjection = new Matrix4f();
+    @Unique private final Matrix4f prevModelView     = new Matrix4f();
+    @Unique private final Matrix4f prevProjection    = new Matrix4f();
+    @Unique private final Matrix4f scratchModelView  = new Matrix4f();
+    @Unique private final Matrix4f scratchProjection = new Matrix4f();
     @Unique private double prevCamX, prevCamY, prevCamZ;
 
-    @Inject(method = "render", at = @At("HEAD"))
-    private void onRenderHead(
-            ObjectAllocator allocator, RenderTickCounter tickCounter,
-            boolean renderBlockOutline, Camera camera,
+    @Inject(method = "renderLevel", at = @At("HEAD"))
+    private void naturalMotionBlur$onRenderHead(
+            GraphicsResourceAllocator resourceAllocator,
+            DeltaTracker deltaTracker,
+            boolean renderOutline,
+            Camera camera,
             GameRenderer gameRenderer,
-            Matrix4f positionMatrix, Matrix4f projectionMatrix,
-            CallbackInfo ci) {
+            Matrix4f modelViewMatrix,
+            Matrix4f projectionMatrix,
+            CallbackInfo ci
+    ) {
+        ShaderManager.captureAllocator(resourceAllocator);
+        RecordingShaderManager.captureAllocator(resourceAllocator);
+        ShaderManager.beginFrame();
 
-        ShaderManager.captureAllocator(allocator);
+        double cx = camera.getPosition().x();
+        double cy = camera.getPosition().y();
+        double cz = camera.getPosition().z();
 
-        double cx = camera.getPos().x;
-        double cy = camera.getPos().y;
-        double cz = camera.getPos().z;
+        float dx = (float)(cx - prevCamX);
+        float dy = (float)(cy - prevCamY);
+        float dz = (float)(cz - prevCamZ);
+
+        scratchModelView.set(modelViewMatrix);
+        scratchProjection.set(projectionMatrix);
 
         ShaderManager.setFrameMotionBlur(
-                positionMatrix,   prevModelView,
-                projectionMatrix, prevProjection,
-                (float)(cx - prevCamX),
-                (float)(cy - prevCamY),
-                (float)(cz - prevCamZ));
+                scratchModelView, prevModelView,
+                scratchProjection, prevProjection,
+                dx, dy, dz
+        );
 
-        prevModelView.set(positionMatrix);
-        prevProjection.set(projectionMatrix);
+        prevModelView.set(scratchModelView);
+        prevProjection.set(scratchProjection);
         prevCamX = cx;
         prevCamY = cy;
         prevCamZ = cz;
+    }
+
+    // Apply pre-entity blur
+    @Inject(
+            method = "method_62214",
+            at = @At(
+                    value = "INVOKE",
+                    target = "Lnet/minecraft/client/renderer/LevelRenderer;renderEntities(Lcom/mojang/blaze3d/vertex/PoseStack;Lnet/minecraft/client/renderer/MultiBufferSource$BufferSource;Lnet/minecraft/client/Camera;Lnet/minecraft/client/DeltaTracker;Ljava/util/List;)V"
+            ),
+            remap = false,
+            require = 0
+    )
+    private void naturalMotionBlur$beforeRenderEntities(CallbackInfo ci) {
+        ConfigEntries config = ConfigManager.getConfig();
+        if (config.blurAlgorithm == ConfigEntries.BlurAlgorithm.VELOCITY_BASED) {
+            if (naturalMotionBlur$shouldUseSpecialSingleBlur()) {
+                ShaderManager.applyF5EntityRideBlur();
+            } else {
+                ShaderManager.applyPreEntityBlur();
+            }
+        }
+    }
+
+    // Apply post-entity blur
+    @Inject(method = "renderLevel", at = @At("TAIL"))
+    private void naturalMotionBlur$onRenderLevelTail(
+            GraphicsResourceAllocator resourceAllocator,
+            DeltaTracker deltaTracker,
+            boolean renderOutline,
+            Camera camera,
+            GameRenderer gameRenderer,
+            Matrix4f modelViewMatrix,
+            Matrix4f projectionMatrix,
+            CallbackInfo ci
+    ) {
+        ConfigEntries config = ConfigManager.getConfig();
+        if (config.blurAlgorithm != ConfigEntries.BlurAlgorithm.VELOCITY_BASED
+                || !naturalMotionBlur$shouldUseSpecialSingleBlur()) {
+            ShaderManager.applyPostRenderBlur();
+        }
+        ShaderManager.clearFrameAllocator();
+    }
+
+    @Unique
+    private boolean naturalMotionBlur$shouldUseSpecialSingleBlur() {
+        Minecraft client = Minecraft.getInstance();
+        if (client.options.getCameraType() != CameraType.FIRST_PERSON) { return true; }
+        return client.player != null && client.player.isPassenger();
     }
 }

@@ -3,12 +3,19 @@ package net.natural.motionblur.config;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonObject;
-import me.shedaniel.clothconfig2.api.*;
+import dev.isxander.yacl3.api.ConfigCategory;
+import dev.isxander.yacl3.api.Option;
+import dev.isxander.yacl3.api.OptionDescription;
+import dev.isxander.yacl3.api.YetAnotherConfigLib;
+import dev.isxander.yacl3.api.controller.BooleanControllerBuilder;
+import dev.isxander.yacl3.api.controller.EnumControllerBuilder;
+import dev.isxander.yacl3.api.controller.FloatSliderControllerBuilder;
+import dev.isxander.yacl3.api.controller.IntegerSliderControllerBuilder;
 import net.fabricmc.loader.api.FabricLoader;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.util.InputUtil;
-import net.minecraft.text.Text;
-import net.minecraft.util.Formatting;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.network.chat.Component;
+import net.natural.motionblur.recording.RecordingShaderManager;
 import org.apache.commons.io.FileUtils;
 
 import java.io.File;
@@ -31,223 +38,189 @@ public class ConfigManager {
         return config;
     }
 
-    //Config Screen Interface
-    public static void openConfigScreen() {
-        ConfigBuilder builder = ConfigBuilder.create()
-                .setParentScreen(null)
-                .setTitle(Text.literal("Natural Motion Blur"));
-
-        ConfigCategory general = builder.getOrCreateCategory(Text.literal("Motion Blur Options"));
-        ConfigEntryBuilder entryBuilder = builder.entryBuilder();
+    // Config Screen Interface
+    public static Screen createConfigScreen(Screen parent) {
         ConfigEntries cfg = getConfig();
 
-        // Toggle Motion Blur
-        general.addEntry(entryBuilder.startBooleanToggle(Text.literal("Toggle Motion Blur"), cfg.enabled)
-                .setDefaultValue(true)
-                .setSaveConsumer(newValue -> cfg.enabled = newValue)
-                .build());
+        var refreshRateScalingOption = Option.<Boolean>createBuilder()
+                .name(Component.literal("Refresh Rate Scaling"))
+                .description(OptionDescription.of(Component.empty()
+                        .append(Component.literal("If enabled, motion blur strength will adjust automatically based on FPS relative to your monitor's refresh rate. This helps in preventing stroboscopic effect visibility on high FPS.\n\n"))
+                        .append(Component.literal("When disabled, the blur strength is fixed to the set value.\n\n"))
+                        .append(Component.literal("Example\n").withStyle(s -> s.withColor(0x5599FF).withBold(true)))
+                        .append(Component.literal("1. ").withStyle(s -> s.withColor(0x5599FF).withBold(true)))
+                        .append(Component.literal("600 FPS on a 60 Hz monitor → strength is increased by 10x\n").withStyle(s -> s.withColor(0x5599FF)))
+                        .append(Component.literal("2. ").withStyle(s -> s.withColor(0x5599FF).withBold(true)))
+                        .append(Component.literal("60 FPS or less on a 60 Hz monitor → strength is not changed").withStyle(s -> s.withColor(0x5599FF)))))
+                .binding(true, () -> cfg.refreshRateScaling, newValue -> cfg.refreshRateScaling = newValue)
+                .controller(opt -> BooleanControllerBuilder.create(opt).coloured(true))
+                .available(cfg.blurAlgorithm == ConfigEntries.BlurAlgorithm.VELOCITY_BASED)
+                .build();
 
-        // Third Person Rendering
-        general.addEntry(entryBuilder.startBooleanToggle(Text.literal("Third Person Rendering"), cfg.renderF5)
-                .setDefaultValue(true)
-                .setTooltip(Text.literal("Decide whether the motion blur should be rendered in third person (F5) or not."))
-                .setSaveConsumer(newValue -> cfg.renderF5 = newValue)
-                .build());
+        var strengthOption = Option.<Float>createBuilder()
+                .name(Component.literal("Motion Blur Strength"))
+                .description(OptionDescription.of(Component.literal("""
+                        Sets the intensity of the blur.
+                        \s
+                        Default setting (1.0) blurs frames ideally in correlation to the framerate.""")))
+                .binding(1.0F, () -> cfg.motionBlurStrength, newValue -> cfg.motionBlurStrength = newValue)
+                .controller(opt -> FloatSliderControllerBuilder.create(opt).range(0f, 2f).step(0.1f))
+                .available(cfg.blurAlgorithm != ConfigEntries.BlurAlgorithm.FRAME_BLENDING)
+                .build();
 
-        // Use Refresh Rate Scaling
-        general.addEntry(entryBuilder.startBooleanToggle(Text.literal("Use Refresh Rate Scaling"), cfg.refreshRateScaling)
-                .setDefaultValue(true)
-                .setTooltip(Text.literal("If enabled, motion blur strength will adjust automatically based on FPS relative to your display's refresh rate.\n" +
-                        "When disabled, the blur strength is fixed to the set value."))
-                .setSaveConsumer(newValue -> cfg.refreshRateScaling = newValue)
-                .build());
-
-        // Use Depth Blur
-        general.addEntry(entryBuilder.startBooleanToggle(Text.literal("Use Depth Blur"), cfg.depthBlur)
-                .setDefaultValue(true)
-                .setTooltip(Text.literal("""
-                        If enabled, the mod will use depth information for movement blur.
-                        When disabled, only mouse movement will be blurred.\s
-                        
-                        This setting is incompatible with\s""").append(Text.literal("Fabulous!").formatted(Formatting.ITALIC)).append(" graphics. Depth blur will not work regardless of this setting."))
-                .setSaveConsumer(newValue -> cfg.depthBlur = newValue)
-                .build());
-
-        // Motion Blur Strength
-        general.addEntry(entryBuilder.startFloatField(Text.literal("Motion Blur Strength"), cfg.motionBlurStrength)
-                .setDefaultValue(1.0F)
-                .setMin(-1000)
-                .setMax(1000)
-                .setTooltip(Text.literal("Sets the intensity of the blur. \n" +
-                        "Default setting (1.0) blurs frames ideally in correlation to the framerate."))
-                .setSaveConsumer(newValue -> cfg.motionBlurStrength = newValue)
-                .build());
-
-        // Blur Algorithm
-        general.addEntry(entryBuilder.startEnumSelector(
-                        Text.literal("Blur Algorithm"),
-                        ConfigEntries.BlurAlgorithm.class,
-                        cfg.blurAlgorithm)
-                .setDefaultValue(ConfigEntries.BlurAlgorithm.CENTERED)
-                .setTooltip(Text.literal("""
-                        Changes the blur to either only blur frames behind player movement or in both directions.\s
-                        
-                        BACKWARDS has better blur continuity (less gaps in the blur) but a slight increase in perceived input lag.\s
-                        CENTERED has better visual uniformity (e.g. translucent objects) and no perceived increase in input lag."""))
-                .setSaveConsumer(newValue -> cfg.blurAlgorithm = newValue)
-                .build());
-
-        // Toggle Key
-        general.addEntry(entryBuilder.startKeyCodeField(Text.literal("Toggle Key"), cfg.getToggleKey())
-                .setDefaultValue(ModifierKeyCode.of(InputUtil.fromTranslationKey("key.keyboard.b"), Modifier.none()))
-                .setKeySaveConsumer(newValue -> {
-                    cfg.setToggleKey(newValue);
-                    KeybindingManager.updateKeybinding();
+        var algorithmOption = Option.<ConfigEntries.BlurAlgorithm>createBuilder()
+                .name(Component.literal("Blur Algorithm"))
+                .description(OptionDescription.of(Component.empty()
+                        .append(Component.literal("Changes how motion blur is rendered.\n\n"))
+                        .append(Component.literal("Velocity Based").withStyle(style -> style.withColor(0x5599FF).withBold(true))).append(Component.literal(" (Recommended)").withStyle(style -> style.withColor(0xAAAAAA)))
+                        .append(Component.literal("\nUses velocity information to blur in the direction of movement.\n"))
+                        .append(Component.literal("The same technique used by shader packs like BSL, Complementary and Labymod client. Improved upon to fix issues with excessive blur.\n\n").withStyle(style -> style.withColor(0xAAAAAA).withItalic(true)))
+                        .append(Component.literal("Frame Blending").withStyle(style -> style.withColor(0x5599FF).withBold(true)))
+                        .append(Component.literal("\nBlends additional frames between each displayed frame into the current image.\n"))
+                        .append(Component.literal("Recreates the effect of post-processing tools like blur by f0e, Premiere Pro, and DaVinci Resolve.\n\n").withStyle(style -> style.withColor(0xAAAAAA).withItalic(true)))
+                        .append(Component.literal("Accumulation MAX").withStyle(style -> style.withColor(0xFF5555).withBold(true)))
+                        .append(Component.literal("\nCreates a blur trail with high brightness.\n"))
+                        .append(Component.literal("Matches LABYMOD MIX, LUNAR V1, BLC 2.0.\n\n").withStyle(style -> style.withColor(0xAAAAAA).withItalic(true)))
+                        .append(Component.literal("Accumulation MIX").withStyle(style -> style.withColor(0xFF5555).withBold(true)))
+                        .append(Component.literal("\nCreates a blur trail with even brightness.\n"))
+                        .append(Component.literal("Matches LABYMOD MAX, LUNAR V2/V3, BLC 3.0/Badlion.").withStyle(style -> style.withColor(0xAAAAAA).withItalic(true)))))
+                .binding(ConfigEntries.BlurAlgorithm.VELOCITY_BASED, () -> cfg.blurAlgorithm, newValue -> cfg.blurAlgorithm = newValue)
+                .listener((opt, newValue) -> {
+                    refreshRateScalingOption.setAvailable(newValue == ConfigEntries.BlurAlgorithm.VELOCITY_BASED);
+                    strengthOption.setAvailable(newValue != ConfigEntries.BlurAlgorithm.FRAME_BLENDING);
                 })
-                .build());
+                .controller(opt -> EnumControllerBuilder.create(opt)
+                        .enumClass(ConfigEntries.BlurAlgorithm.class)
+                        .valueFormatter(value -> switch (value) {
+                            case VELOCITY_BASED  -> Component.literal("Velocity Based").withStyle(s -> s.withColor(0x5599FF));
+                            case FRAME_BLENDING  -> Component.literal("Frame Blending").withStyle(s -> s.withColor(0x5599FF));
+                            case ACCUMULATION_MAX -> Component.literal("Accumulation MAX").withStyle(s -> s.withColor(0xFF5555));
+                            case ACCUMULATION_MIX -> Component.literal("Accumulation MIX").withStyle(s -> s.withColor(0xFF5555));
+                        }))
+                .build();
 
-        // Set save callback
-        builder.setSavingRunnable(ConfigManager::saveConfig);
+        return YetAnotherConfigLib.createBuilder()
+                .title(Component.literal("Natural Motion Blur"))
+                .category(ConfigCategory.createBuilder()
+                        .name(Component.literal("Motion Blur Options"))
+                        .option(Option.<Boolean>createBuilder()
+                                .name(Component.literal("Motion Blur"))
+                                .binding(true, () -> cfg.enabled, newValue -> cfg.enabled = newValue)
+                                .controller(opt -> BooleanControllerBuilder.create(opt).coloured(true))
+                                .build())
+                        .option(refreshRateScalingOption)
+                        .option(strengthOption)
+                        .option(algorithmOption)
+                        .build())
 
-        // Display the config screen
-        MinecraftClient.getInstance().send(() ->
-                MinecraftClient.getInstance().setScreen(builder.build())
+                .category(ConfigCategory.createBuilder()
+                        .name(Component.literal("Recording Output"))
+
+                        .option(Option.<Boolean>createBuilder()
+                                .name(Component.literal("Enable OBS Spout Output"))
+                                .description(OptionDescription.of(Component.empty()
+                                        .append(Component.literal("Sends a different blur setup directly to OBS.\n\n"))
+                                        .append(Component.literal("Requires the OBS Spout2 Plugin (Windows only).\n\n"))
+                                        .append(Component.literal("Setup\n").withStyle(s -> s.withColor(0x5599FF).withBold(true)))
+                                        .append(Component.literal("1. ").withStyle(s -> s.withColor(0x5599FF).withBold(true)))
+                                        .append(Component.literal("Download the Spout2 Plugin Installer from github.com/Off-World-Live/obs-spout2-plugin\n").withStyle(s -> s.withColor(0x5599FF)))
+                                        .append(Component.literal("2. ").withStyle(s -> s.withColor(0x5599FF).withBold(true)))
+                                        .append(Component.literal("Run the installer, then enable the plugin via OBS > Tools > Plugin Manager\n").withStyle(s -> s.withColor(0x5599FF)))
+                                        .append(Component.literal("3. ").withStyle(s -> s.withColor(0x5599FF).withBold(true)))
+                                        .append(Component.literal("In OBS, add a new Source and select 'Spout2 Capture'\n").withStyle(s -> s.withColor(0x5599FF)))
+                                        .append(Component.literal("4. ").withStyle(s -> s.withColor(0x5599FF).withBold(true)))
+                                        .append(Component.literal("Enable this option - the feed should appear in OBS automatically\n\n").withStyle(s -> s.withColor(0x5599FF)))
+                                        .append(Component.literal("⚠ Disclaimer\n").withStyle(s -> s.withColor(0xFF5555).withBold(true)))
+                                        .append(Component.literal("Since this runs an additional frame blending layer for the OBS output, follow either of these rules for ideal results:\n\n").withStyle(s -> s.withColor(0xFF5555)))
+                                        .append(Component.literal("A. ").withStyle(s -> s.withColor(0xFF5555).withBold(true)))
+                                        .append(Component.literal("Turn off motion blur and play at any FPS setting\n").withStyle(s -> s.withColor(0xFF5555)))
+                                        .append(Component.literal("B. ").withStyle(s -> s.withColor(0xFF5555).withBold(true)))
+                                        .append(Component.literal("Turn on any motion blur and limit FPS to your monitor's refresh rate\n").withStyle(s -> s.withColor(0xFF5555)))
+                                        .append(Component.literal("C. ").withStyle(s -> s.withColor(0xFF5555).withBold(true)))
+                                        .append(Component.literal("Turn on velocity blur, turn off refresh rate scaling and play at any FPS setting").withStyle(s -> s.withColor(0xFF5555)))))
+                                .binding(false, () -> cfg.recordingOverlayEnabled, newVal -> {
+                                    cfg.recordingOverlayEnabled = newVal;
+                                    if (!newVal) RecordingShaderManager.destroy();
+                                })
+                                .controller(opt -> BooleanControllerBuilder.create(opt).coloured(true))
+                                .build())
+
+                        .option(Option.<Integer>createBuilder()
+                                .name(Component.literal("Recording FPS Target"))
+                                .description(OptionDescription.of(Component.literal("""
+                                        FPS target for the Spout recording output.""")))
+                                .binding(60, () -> cfg.recordingOverlayTargetFPS, newVal -> cfg.recordingOverlayTargetFPS = newVal)
+                                .controller(opt -> IntegerSliderControllerBuilder.create(opt).range(24, 240).step(1))
+                                .build())
+
+                        .build())
+                .save(ConfigManager::saveConfig)
+                .build()
+                .generateScreen(parent);
+    }
+
+    public static void openConfigScreen() {
+        var screen = createConfigScreen(null);
+        Minecraft.getInstance().schedule(() ->
+                Minecraft.getInstance().setScreen(screen)
         );
     }
 
-    //Config Screen Logic
+    // Config Screen Logic
     public static void loadConfig() {
         File configFile = getConfigFile();
-        boolean configModified = false;
         errorMessages.clear();
 
+        config = new ConfigEntries();
+
         if (!configFile.exists()) {
+            saveConfig();
+            return;
+        }
+
+        try {
+            JsonObject json = GSON.fromJson(FileUtils.readFileToString(configFile, StandardCharsets.UTF_8), JsonObject.class);
+            if (json == null) { saveConfig(); return; }
+            boolean modified = false;
+
+            if (json.has("enabled")) {
+                try { config.enabled = parseBool(json.get("enabled").getAsString()); }
+                catch (Exception e) { config.enabled = true; errorMessages.add("Toggle option of \"Natural Motion Blur\" was invalid and has been reset to default (enabled)."); modified = true; }
+            }
+            if (json.has("refreshRateScaling")) {
+                try { config.refreshRateScaling = parseBool(json.get("refreshRateScaling").getAsString()); }
+                catch (Exception e) { config.refreshRateScaling = true; errorMessages.add("Refresh Rate Scaling option of \"Natural Motion Blur\" was invalid and has been reset to default (enabled)."); modified = true; }
+            }
+            if (json.has("motionBlurStrength")) {
+                try { float v = json.get("motionBlurStrength").getAsFloat(); if (v < 0.0F || v > 2.0F) throw new IllegalArgumentException(); config.motionBlurStrength = v; }
+                catch (Exception e) { config.motionBlurStrength = 1.0F; errorMessages.add("Motion Blur Strength option of \"Natural Motion Blur\" was invalid and has been reset to default (1.0)."); modified = true; }
+            }
+            if (json.has("blurAlgorithm")) {
+                try { config.blurAlgorithm = ConfigEntries.BlurAlgorithm.valueOf(json.get("blurAlgorithm").getAsString().toUpperCase()); }
+                catch (Exception e) { config.blurAlgorithm = ConfigEntries.BlurAlgorithm.VELOCITY_BASED; errorMessages.add("Blur Algorithm option of \"Natural Motion Blur\" was invalid and has been reset to default (Velocity Based)."); modified = true; }
+            }
+            if (json.has("recordingOverlayTargetFPS")) {
+                try {
+                    int hz = json.get("recordingOverlayTargetFPS").getAsInt();
+                    if (hz < 24 || hz > 240) throw new IllegalArgumentException();
+                    config.recordingOverlayTargetFPS = hz;
+                } catch (Exception e) { config.recordingOverlayTargetFPS = 60; errorMessages.add("OBS Spout Output FPS Target option of \"Natural Motion Blur\" was invalid and has been reset to default (60)."); modified = true; }
+            }
+            // OBS Spout Output is runtime-only and must always start disabled on launch.
+            config.recordingOverlayEnabled = false;
+            if (modified) { saveConfig(); configReset = true; }
+
+        } catch (Exception e) {
             config = new ConfigEntries();
             saveConfig();
-        } else {
-            try {
-                JsonObject configJson = GSON.fromJson(FileUtils.readFileToString(configFile, StandardCharsets.UTF_8), JsonObject.class);
-                config = new ConfigEntries();
-
-                // Process enabled
-                if (configJson.has("enabled")) {
-                    try {
-                        String enabledValue = configJson.get("enabled").getAsString();
-                        if ("true".equalsIgnoreCase(enabledValue) || "false".equalsIgnoreCase(enabledValue)) {
-                            config.enabled = Boolean.parseBoolean(enabledValue);
-                        } else {
-                            throw new IllegalArgumentException();
-                        }
-                    } catch (Exception e) {
-                        config.enabled = true;
-                        errorMessages.add("Toggle option of mod \"Natural Motion Blur\" was invalid and has been reset to default (enabled).");
-                        configModified = true;
-                    }
-                }
-
-                // Process renderF5
-                if (configJson.has("renderF5")) {
-                    try {
-                        String renderF5Value = configJson.get("renderF5").getAsString();
-                        if ("true".equalsIgnoreCase(renderF5Value) || "false".equalsIgnoreCase(renderF5Value)) {
-                            config.renderF5 = Boolean.parseBoolean(renderF5Value);
-                        } else {
-                            throw new IllegalArgumentException();
-                        }
-                    } catch (Exception e) {
-                        config.renderF5 = true;
-                        errorMessages.add("Third person rendering option of mod \"Natural Motion Blur\" was invalid and has been reset to default (enabled).");
-                        configModified = true;
-                    }
-                }
-
-                // Process refreshRateScaling
-                if (configJson.has("refreshRateScaling")) {
-                    try {
-                        String scalingValue = configJson.get("refreshRateScaling").getAsString();
-                        if ("true".equalsIgnoreCase(scalingValue) || "false".equalsIgnoreCase(scalingValue)) {
-                            config.refreshRateScaling = Boolean.parseBoolean(scalingValue);
-                        } else {
-                            throw new IllegalArgumentException();
-                        }
-                    } catch (Exception e) {
-                        config.refreshRateScaling = true;
-                        errorMessages.add("Refresh rate scaling option of mod \"Natural Motion Blur\" was invalid and has been reset to default (enabled).");
-                        configModified = true;
-                    }
-                }
-
-                // Process depthBlur
-                if (configJson.has("depthBlur")) {
-                    try {
-                        String val = configJson.get("depthBlur").getAsString();
-                        if ("true".equalsIgnoreCase(val) || "false".equalsIgnoreCase(val)) {
-                            config.depthBlur = Boolean.parseBoolean(val);
-                        } else {
-                            throw new IllegalArgumentException();
-                        }
-                    } catch (Exception e) {
-                        config.depthBlur = true;
-                        errorMessages.add("Toggle option of \"Use Depth Blur\" was invalid and has been reset to default (enabled).");
-                        configModified = true;
-                    }
-                }
-
-                // Process motionBlurStrength
-                if (configJson.has("motionBlurStrength")) {
-                    try {
-                        float strength = configJson.get("motionBlurStrength").getAsFloat();
-                        if (strength < -1000.0F || strength > 1000.0F) {
-                            throw new IllegalArgumentException();
-                        }
-                        config.motionBlurStrength = strength;
-                    } catch (Exception e) {
-                        config.motionBlurStrength = 1.0F;
-                        errorMessages.add("Strength value of mod \"Natural Motion Blur\" was invalid and has been reset to default (1.0).");
-                        configModified = true;
-                    }
-                }
-
-                // Process blurAlgorithm
-                if (configJson.has("blurAlgorithm")) {
-                    try {
-                        config.blurAlgorithm = ConfigEntries.BlurAlgorithm.valueOf(configJson.get("blurAlgorithm").getAsString().toUpperCase());
-                    } catch (Exception e) {
-                        config.blurAlgorithm = ConfigEntries.BlurAlgorithm.CENTERED;
-                        errorMessages.add("Blur algorithm of mod \"Natural Motion Blur\" was invalid and has been reset to default (CENTERED).");
-                        configModified = true;
-                    }
-                }
-
-                // Process toggleKey
-                if (configJson.has("toggleKey")) {
-                    try {
-                        String key = configJson.get("toggleKey").getAsString();
-                        InputUtil.Key parsedKey = InputUtil.fromTranslationKey(key);
-
-                        if (parsedKey == null || key.trim().isEmpty()) {
-                            throw new IllegalArgumentException();
-                        }
-                        config.setToggleKey(parsedKey);
-                    } catch (Exception e) {
-                        config.setToggleKey(InputUtil.fromTranslationKey("key.keyboard.b"));
-                        errorMessages.add("Toggle key of mod \"Natural Motion Blur\" was invalid and has been reset to default (V).");
-                        configModified = true;
-                    }
-                }
-            } catch (Exception e) {
-                config = new ConfigEntries();
-                saveConfig();
-                configReset = true;
-                errorMessages.add("Config file of mod \"Natural Motion Blur\" could not be loaded correctly and has been reset to default.");
-                return;
-            }
-
-            if (configModified) {
-                saveConfig();
-                configReset = true;
-            }
+            configReset = true;
+            errorMessages.add("Config file of mod \"Natural Motion Blur\" could not be loaded correctly and has been reset to default.");
         }
+    }
+
+    private static boolean parseBool(String s) {
+        if (!"true".equalsIgnoreCase(s) && !"false".equalsIgnoreCase(s)) throw new IllegalArgumentException();
+        return Boolean.parseBoolean(s);
     }
 
     public static void saveConfig() {
