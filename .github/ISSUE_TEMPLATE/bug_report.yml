@@ -3,10 +3,6 @@ description: "For reporting bugs and other defects"
 labels:
   - S-needs-triage
 body:
-  - type: markdown
-    attributes:
-      value: >-
-        # BUG REPORT
   - type: textarea
     id: description
     attributes:
