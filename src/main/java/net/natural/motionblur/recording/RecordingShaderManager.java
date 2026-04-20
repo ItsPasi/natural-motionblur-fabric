@@ -110,7 +110,7 @@ public class RecordingShaderManager {
         pushHistoryFrame(main);
 
         int sampleCount = Math.min(recHistoryFilled, recLockedN);
-        if (sampleCount <= 1) {
+        if (sampleCount <= 0) {
             recHasFirstFrame = true;
             return;
         }
