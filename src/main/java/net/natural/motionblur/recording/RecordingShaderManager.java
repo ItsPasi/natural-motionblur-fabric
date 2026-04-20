@@ -22,11 +22,9 @@ import net.natural.motionblur.mixin.ShaderManagerAccessor;
 import net.natural.motionblur.util.GpuBufferUtil;
 import org.jspecify.annotations.NonNull;
 import org.jspecify.annotations.Nullable;
-
 import org.lwjgl.glfw.GLFW;
 
 import java.lang.reflect.Field;
-import java.lang.reflect.Method;
 import java.util.List;
 import java.util.Map;
 
@@ -45,10 +43,9 @@ public class RecordingShaderManager {
     private static int lastH = 0;
 
     private static PostChain recCombineChain = null;
-    private static GpuBuffer recCombineUBO = null;
-
-    private static PostChain recCursorChain = null;
-    private static GpuBuffer recCursorUBO   = null;
+    private static GpuBuffer recCombineUBO   = null;
+    private static PostChain recCursorChain  = null;
+    private static GpuBuffer recCursorUBO    = null;
 
     private static final ResourceLocation CURSOR_TEXTURE_ID =
             ResourceLocation.fromNamespaceAndPath(NaturalMotionBlurMod.ID, "textures/gui/obs_cursor.png");
@@ -65,8 +62,7 @@ public class RecordingShaderManager {
     private static float   recPrevRawCursorY       = 0;
     private static boolean recPrevRawCursorVisible = false;
 
-
-    // --- Cached GLFW window handle (resolved once via reflection) ---
+    // Cached GLFW window handle (resolved once via reflection)
     private static long    cachedGlfwHandle        = 0;
     private static boolean glfwHandleResolved      = false;
 
@@ -102,8 +98,7 @@ public class RecordingShaderManager {
         }
     }
 
-    private static void applyIsolatedFrameBlending(RenderTarget main, float fps,
-                                                   int refreshRate, int w, int h) {
+    private static void applyIsolatedFrameBlending(RenderTarget main, float fps, int refreshRate, int w, int h) {
         Minecraft mc = Minecraft.getInstance();
         updateLockedWindowSize(fps, refreshRate);
 
@@ -119,31 +114,49 @@ public class RecordingShaderManager {
         int oldestIndex = oldestHistoryIndex(sampleCount);
 
         recCombineChain = loadChain(mc, recCombineChain, "frame_blending");
-        if (recCombineChain == null) { recHasFirstFrame = true; return; }
+        if (recCombineChain == null) {
+            recHasFirstFrame = true;
+            return;
+        }
+
         PostPass combinePass = firstPass(recCombineChain);
-        if (combinePass == null) { recHasFirstFrame = true; return; }
+        if (combinePass == null) {
+            recHasFirstFrame = true;
+            return;
+        }
+
         Map<String, GpuBuffer> combineUniforms = ((PostPassAccessor) combinePass).getCustomUniforms();
         if (!combineUniforms.containsKey("FrameBlendParamsUniforms")) {
-            recHasFirstFrame = true; return;
+            recHasFirstFrame = true;
+            return;
         }
-        if (recCombineUBO == null) recCombineUBO = GpuBufferUtil.createUBO("RecFrameBlendParamsUniforms", SCALAR_UBO_SIZE);
+
+        if (recCombineUBO == null) {
+            recCombineUBO = GpuBufferUtil.createUBO("RecFrameBlendParamsUniforms", SCALAR_UBO_SIZE);
+        }
+
         GpuBuffer savedCombineUBO = combineUniforms.put("FrameBlendParamsUniforms", recCombineUBO);
         writeBlendParamsUBO(recCombineUBO, 1.0f / sampleCount, sampleCount);
 
         RenderTarget fallback = recHistoryTargets[oldestIndex];
         PostPass.Input[] savedSamplers = new PostPass.Input[MAX_HISTORY];
         for (int i = 0; i < MAX_HISTORY; i++) {
-            RenderTarget target = (i < sampleCount)
+            RenderTarget historyTarget = (i < sampleCount)
                     ? recHistoryTargets[(oldestIndex + i) % MAX_HISTORY]
                     : fallback;
-            savedSamplers[i] = swapSampler(combinePass, "Sample" + i, new PersistentTextureInput("Sample" + i, target));
+            savedSamplers[i] = swapSampler(combinePass, "Sample" + i, new PersistentTextureInput("Sample" + i, historyTarget));
         }
 
         recCombineChain.process(main, savedAllocator);
 
-        if (savedCombineUBO != null) combineUniforms.put("FrameBlendParamsUniforms", savedCombineUBO);
+        if (savedCombineUBO != null) {
+            combineUniforms.put("FrameBlendParamsUniforms", savedCombineUBO);
+        }
+
         for (int i = 0; i < MAX_HISTORY; i++) {
-            if (savedSamplers[i] != null) swapSampler(combinePass, "Sample" + i, savedSamplers[i]);
+            if (savedSamplers[i] != null) {
+                swapSampler(combinePass, "Sample" + i, savedSamplers[i]);
+            }
         }
 
         recHasFirstFrame = true;
@@ -219,7 +232,10 @@ public class RecordingShaderManager {
             return;
         }
 
-        if (recCursorUBO == null) recCursorUBO = GpuBufferUtil.createUBO("CursorOverlayUniforms", CURSOR_UBO_SIZE);
+        if (recCursorUBO == null) {
+            recCursorUBO = GpuBufferUtil.createUBO("CursorOverlayUniforms", CURSOR_UBO_SIZE);
+        }
+
         GpuBuffer savedCursorUBO = cursorUniforms.put("CursorOverlayUniforms", recCursorUBO);
         writeCursorUBO(recCursorUBO, cursor.x, cursor.y, cursor.scale, prevDrawX, prevDrawY);
 
@@ -229,7 +245,9 @@ public class RecordingShaderManager {
 
         GpuTextureView testView = getTextureView(mc, CURSOR_TEXTURE_ID);
         if (testView == null) {
-            if (savedCursorUBO != null) cursorUniforms.put("CursorOverlayUniforms", savedCursorUBO);
+            if (savedCursorUBO != null) {
+                cursorUniforms.put("CursorOverlayUniforms", savedCursorUBO);
+            }
             return;
         }
 
@@ -245,9 +263,7 @@ public class RecordingShaderManager {
         if (savedCursorSampler != null) swapSampler(cursorPass, "Cursor", savedCursorSampler);
     }
 
-    private static void writeCursorUBO(GpuBuffer ubo,
-                                       float cursorX, float cursorY, float cursorScale,
-                                       float prevCursorX, float prevCursorY) {
+    private static void writeCursorUBO(GpuBuffer ubo, float cursorX, float cursorY, float cursorScale, float prevCursorX, float prevCursorY) {
         try (GpuBuffer.MappedView view = RenderSystem.getDevice().createCommandEncoder()
                 .mapBuffer(ubo, false, true)) {
             Std140Builder b = Std140Builder.intoBuffer(view.data());
@@ -280,10 +296,11 @@ public class RecordingShaderManager {
             double winH = mc.getWindow().getHeight();
             if (winW <= 0 || winH <= 0) return CursorState.HIDDEN;
 
-            float x = (float)(xArr[0] * renderWidth  / winW);
-            float y = (float)(yArr[0] * renderHeight / winH);
-            if (x < -32 || y < -32 || x > renderWidth + 32 || y > renderHeight + 32)
+            float x = (float) (xArr[0] * renderWidth / winW);
+            float y = (float) (yArr[0] * renderHeight / winH);
+            if (x < -32 || y < -32 || x > renderWidth + 32 || y > renderHeight + 32) {
                 return CursorState.HIDDEN;
+            }
 
             return new CursorState(x, y, 1.0f, true);
         } catch (Throwable e) {
@@ -351,18 +368,17 @@ public class RecordingShaderManager {
     }
 
     public static void destroy() {
-        if (cleanFrameTarget != null) { cleanFrameTarget.destroyBuffers(); cleanFrameTarget = null; }
+        if (cleanFrameTarget != null) {
+            cleanFrameTarget.destroyBuffers();
+            cleanFrameTarget = null;
+        }
+
         savedAllocator = null;
         invalidateFrameBlending();
         lastW = 0;
         lastH = 0;
         cachedGlfwHandle = 0;
         glfwHandleResolved = false;
-        cachedGetTextureMethod = null;
-        cachedGetViewMethod = null;
-        cachedRegister2Method = null;
-        cachedCursorTexture = null;
-        textureMethodsResolved = false;
         SpoutBridge.shutdown();
     }
 
@@ -382,9 +398,7 @@ public class RecordingShaderManager {
         if (src == null || dst == null) return;
         assert src.getColorTexture() != null;
         assert dst.getColorTexture() != null;
-        RenderSystem.getDevice().createCommandEncoder().copyTextureToTexture(
-                src.getColorTexture(), dst.getColorTexture(),
-                0, 0, 0, 0, 0, dst.width, dst.height);
+        RenderSystem.getDevice().createCommandEncoder().copyTextureToTexture(src.getColorTexture(), dst.getColorTexture(), 0, 0, 0, 0, 0, dst.width, dst.height);
     }
 
     private static PostPass.Input swapSampler(PostPass pass, String samplerName, PostPass.Input replacement) {
@@ -445,17 +459,15 @@ public class RecordingShaderManager {
         }
 
         @Override
-        public void addToPass(com.mojang.blaze3d.framegraph.@NonNull FramePass pass,
-                              @NonNull Map<ResourceLocation, com.mojang.blaze3d.resource.ResourceHandle<RenderTarget>> targets) {}
-
+        public void addToPass(com.mojang.blaze3d.framegraph.@NonNull FramePass pass, @NonNull Map<ResourceLocation, com.mojang.blaze3d.resource.ResourceHandle<RenderTarget>> targets) {}
         @Override
-        public com.mojang.blaze3d.textures.@NonNull GpuTextureView texture(
-                @NonNull Map<ResourceLocation, com.mojang.blaze3d.resource.ResourceHandle<RenderTarget>> targets) {
+        public com.mojang.blaze3d.textures.@NonNull GpuTextureView texture(@NonNull Map<ResourceLocation, com.mojang.blaze3d.resource.ResourceHandle<RenderTarget>> targets) {
             assert target.getColorTextureView() != null;
             return target.getColorTextureView();
         }
-
-        @Override public @NonNull String samplerName() { return samplerName; }
+        @Override public @NonNull String samplerName() {
+            return samplerName;
+        }
     }
 
     private static class ResourceTextureInput implements PostPass.Input {
@@ -468,186 +480,22 @@ public class RecordingShaderManager {
         }
 
         @Override
-        public void addToPass(com.mojang.blaze3d.framegraph.@NonNull FramePass pass,
-                              @NonNull Map<ResourceLocation, com.mojang.blaze3d.resource.ResourceHandle<RenderTarget>> targets) {}
-
+        public void addToPass(com.mojang.blaze3d.framegraph.@NonNull FramePass pass, @NonNull Map<ResourceLocation, com.mojang.blaze3d.resource.ResourceHandle<RenderTarget>> targets) {}
         @Override
         public @Nullable GpuTextureView texture(@NonNull Map<ResourceLocation, com.mojang.blaze3d.resource.ResourceHandle<RenderTarget>> targets) {
-            Minecraft mc = Minecraft.getInstance();
-            return getTextureView(mc, textureId);
+            return getTextureView(Minecraft.getInstance(), textureId);
         }
-
-        @Override public @NonNull String samplerName() { return samplerName; }
+        @Override
+        public @NonNull String samplerName() {
+            return samplerName;
+        }
     }
-
-    // Cached reflected methods (resolved once)
-    private static Method cachedGetTextureMethod   = null;
-    private static Method cachedGetViewMethod      = null;
-    private static Method cachedRegister2Method    = null;
-    private static Object cachedCursorTexture      = null;
-    private static boolean textureMethodsResolved  = false;
 
     private static GpuTextureView getTextureView(Minecraft mc, ResourceLocation textureId) {
         try {
-            Object textureManager = mc.getTextureManager();
-
-            if (!textureMethodsResolved) {
-                resolveTextureMethods(textureManager, textureId);
-                textureMethodsResolved = true;
-            }
-
-            if (cachedGetTextureMethod == null) return null;
-
-            // Get the texture object
-            Object texture;
-            try {
-                texture = cachedGetTextureMethod.invoke(textureManager, textureId);
-            } catch (java.lang.reflect.InvocationTargetException ite) {
-                // Try to register it first, then retry
-                if (registerCursorTexture(textureManager, textureId)) {
-                    texture = cachedGetTextureMethod.invoke(textureManager, textureId);
-                } else {
-                    return null;
-                }
-            }
-            if (texture == null) return null;
-
-            ensureTextureLoaded(texture, mc);
-
-            // Resolve the view getter on the texture object
-            if (cachedGetViewMethod == null) {
-                for (Method m : texture.getClass().getMethods()) {
-                    if (m.getParameterCount() == 0
-                            && GpuTextureView.class.isAssignableFrom(m.getReturnType())) {
-                        m.setAccessible(true);
-                        cachedGetViewMethod = m;
-                        break;
-                    }
-                }
-                if (cachedGetViewMethod == null) {
-                    return null;
-                }
-            }
-
-            Object view = cachedGetViewMethod.invoke(texture);
-            if (view instanceof GpuTextureView gpuTextureView) return gpuTextureView;
+            return mc.getTextureManager().getTexture(textureId).getTextureView();
         } catch (Throwable ignored) {
-        }
-        return null;
-    }
-
-    // Register cursor texture
-    private static boolean registerCursorTexture(Object textureManager, ResourceLocation textureId) {
-        try {
-            if (cachedRegister2Method == null) {
-                // Find register(ResourceLocation, AbstractTexture)
-                Class<?> resLocClass = textureId.getClass();
-                Class<?> abstractTextureClass = cachedGetTextureMethod.getReturnType();
-
-                for (Method m : textureManager.getClass().getMethods()) {
-                    if (m.getParameterCount() == 2
-                            && m.getReturnType() == void.class
-                            && m.getParameterTypes()[0].isAssignableFrom(resLocClass)
-                            && m.getParameterTypes()[1].isAssignableFrom(abstractTextureClass)) {
-                        m.setAccessible(true);
-                        cachedRegister2Method = m;
-                        break;
-                    }
-                }
-            }
-            if (cachedRegister2Method == null) {
-                    return false;
-            }
-
-            // Create a SimpleTexture
-            if (cachedCursorTexture == null) {
-                Class<?> abstractTextureClass = cachedGetTextureMethod.getReturnType();
-                cachedCursorTexture = createSimpleTexture(abstractTextureClass, textureId);
-                if (cachedCursorTexture == null) {
-                    return false;
-                }
-            }
-
-            cachedRegister2Method.invoke(textureManager, textureId, cachedCursorTexture);
-            return true;
-        } catch (Throwable e) {
-            Throwable cause = (e instanceof java.lang.reflect.InvocationTargetException)
-                    ? e.getCause() : e;
-            return false;
-        }
-    }
-
-    // Finds a concrete subclass of AbstractTexture that has a constructor(ResourceLocation) and creates an instance.
-    private static Object createSimpleTexture(Class<?> abstractTextureClass, ResourceLocation textureId) {
-        Class<?> resLocClass = textureId.getClass();
-
-        // First, try the abstract texture class itself (it might be concrete)
-        try {
-            var ctor = abstractTextureClass.getDeclaredConstructor(resLocClass);
-            ctor.setAccessible(true);
-            return ctor.newInstance(textureId);
-        } catch (Throwable ignored) {
-        }
-
-        // Try class names near AbstractTexture's intermediary name
-        // AbstractTexture = class_1044, SimpleTexture is typically class_1043
-        String baseName = abstractTextureClass.getName();
-        if (baseName.startsWith("net.minecraft.class_")) {
-            try {
-                int baseNum = Integer.parseInt(baseName.substring("net.minecraft.class_".length()));
-                // Try nearby class numbers (SimpleTexture is usually close)
-                for (int offset : new int[]{-1, 1, -2, 2, -3, 3, -5, 5, -10, 10}) {
-                    String candidateName = "net.minecraft.class_" + (baseNum + offset);
-                    try {
-                        Class<?> candidate = Class.forName(candidateName);
-                        if (abstractTextureClass.isAssignableFrom(candidate)) {
-                            try {
-                                var ctor = candidate.getDeclaredConstructor(resLocClass);
-                                ctor.setAccessible(true);
-                                return ctor.newInstance(textureId);
-                            } catch (ReflectiveOperationException ignored) {}
-                        }
-                    } catch (ClassNotFoundException ignored) {}
-                }
-            } catch (NumberFormatException ignored) {}
-        }
-        return null;
-    }
-
-    // Tries to trigger texture GPU upload by calling load-like methods on the texture.
-    private static void ensureTextureLoaded(Object texture, Minecraft mc) {
-        // Try to find and call a method that loads the texture to GPU
-        // In Minecraft, AbstractTexture subclasses have load(ResourceManager) or similar
-        try {
-            Object resourceManager = mc.getResourceManager();
-
-            for (Method m : texture.getClass().getMethods()) {
-                if (m.getParameterCount() == 1
-                        && m.getParameterTypes()[0].isInstance(resourceManager)
-                        && m.getReturnType() == void.class) {
-                    m.setAccessible(true);
-                    try {
-                        m.invoke(texture, resourceManager);
-                        return;
-                    } catch (Throwable ignored) {}
-                }
-            }
-        } catch (Throwable ignored) {}
-    }
-
-    // Scans TextureManager for getTexture(ResourceLocation) by signature.
-    private static void resolveTextureMethods(Object textureManager, ResourceLocation textureId) {
-        Class<?> resLocClass = textureId.getClass();
-
-        for (Method m : textureManager.getClass().getMethods()) {
-            if (m.getParameterCount() != 1) continue;
-            if (!m.getParameterTypes()[0].isAssignableFrom(resLocClass)) continue;
-            if (m.getReturnType().isPrimitive() || m.getReturnType() == void.class) continue;
-            if (ResourceLocation.class.isAssignableFrom(m.getReturnType())) continue;
-
-            m.setAccessible(true);
-            cachedGetTextureMethod = m;
-            return;
+            return null;
         }
     }
 }

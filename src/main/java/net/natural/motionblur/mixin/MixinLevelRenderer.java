@@ -89,7 +89,7 @@ public class MixinLevelRenderer {
         }
     }
 
-    // Apply post-render blur.
+    // Apply post-entity blur.
     @Inject(method = "renderLevel", at = @At("TAIL"))
     private void naturalMotionBlur$onRenderLevelTail(
             GraphicsResourceAllocator resourceAllocator,
