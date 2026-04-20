@@ -25,7 +25,6 @@ import org.jspecify.annotations.Nullable;
 import org.lwjgl.glfw.GLFW;
 
 import java.lang.reflect.Field;
-import java.lang.reflect.Method;
 import java.util.List;
 import java.util.Map;
 
@@ -67,12 +66,6 @@ public class RecordingShaderManager {
 
     private static long    cachedGlfwHandle        = 0;
     private static boolean glfwHandleResolved      = false;
-
-    private static Method cachedGetTextureMethod   = null;
-    private static Method cachedGetViewMethod      = null;
-    private static Method cachedRegister2Method    = null;
-    private static Object cachedCursorTexture      = null;
-    private static boolean textureMethodsResolved  = false;
 
     public static void captureAllocator(GraphicsResourceAllocator allocator) {
         savedAllocator = allocator;
@@ -352,11 +345,6 @@ public class RecordingShaderManager {
         lastH = 0;
         cachedGlfwHandle = 0;
         glfwHandleResolved = false;
-        cachedGetTextureMethod = null;
-        cachedGetViewMethod = null;
-        cachedRegister2Method = null;
-        cachedCursorTexture = null;
-        textureMethodsResolved = false;
         SpoutBridge.shutdown();
     }
 
@@ -481,149 +469,9 @@ public class RecordingShaderManager {
 
     private static GpuTextureView getTextureView(Minecraft mc, Identifier textureId) {
         try {
-            Object textureManager = mc.getTextureManager();
-
-            if (!textureMethodsResolved) {
-                resolveTextureMethods(textureManager, textureId);
-                textureMethodsResolved = true;
-            }
-
-            if (cachedGetTextureMethod == null) return null;
-
-            Object texture;
-            try {
-                texture = cachedGetTextureMethod.invoke(textureManager, textureId);
-            } catch (java.lang.reflect.InvocationTargetException ite) {
-                if (registerCursorTexture(textureManager, textureId)) {
-                    texture = cachedGetTextureMethod.invoke(textureManager, textureId);
-                } else {
-                    return null;
-                }
-            }
-            if (texture == null) return null;
-
-            ensureTextureLoaded(texture, mc);
-
-            if (cachedGetViewMethod == null) {
-                for (Method m : texture.getClass().getMethods()) {
-                    if (m.getParameterCount() == 0
-                            && GpuTextureView.class.isAssignableFrom(m.getReturnType())) {
-                        m.setAccessible(true);
-                        cachedGetViewMethod = m;
-                        break;
-                    }
-                }
-                if (cachedGetViewMethod == null) {
-                    return null;
-                }
-            }
-
-            Object view = cachedGetViewMethod.invoke(texture);
-            if (view instanceof GpuTextureView gpuTextureView) return gpuTextureView;
+            return mc.getTextureManager().getTexture(textureId).getTextureView();
         } catch (Throwable ignored) {
         }
         return null;
-    }
-
-    private static boolean registerCursorTexture(Object textureManager, Identifier textureId) {
-        try {
-            if (cachedRegister2Method == null) {
-                Class<?> idClass = textureId.getClass();
-                Class<?> abstractTextureClass = cachedGetTextureMethod.getReturnType();
-
-                for (Method m : textureManager.getClass().getMethods()) {
-                    if (m.getParameterCount() == 2
-                            && m.getReturnType() == void.class
-                            && m.getParameterTypes()[0].isAssignableFrom(idClass)
-                            && m.getParameterTypes()[1].isAssignableFrom(abstractTextureClass)) {
-                        m.setAccessible(true);
-                        cachedRegister2Method = m;
-                        break;
-                    }
-                }
-            }
-            if (cachedRegister2Method == null) {
-                return false;
-            }
-
-            if (cachedCursorTexture == null) {
-                Class<?> abstractTextureClass = cachedGetTextureMethod.getReturnType();
-                cachedCursorTexture = createSimpleTexture(abstractTextureClass, textureId);
-                if (cachedCursorTexture == null) {
-                    return false;
-                }
-            }
-
-            cachedRegister2Method.invoke(textureManager, textureId, cachedCursorTexture);
-            return true;
-        } catch (Throwable ignored) {
-            return false;
-        }
-    }
-
-    private static Object createSimpleTexture(Class<?> abstractTextureClass, Identifier textureId) {
-        Class<?> idClass = textureId.getClass();
-
-        try {
-            var ctor = abstractTextureClass.getDeclaredConstructor(idClass);
-            ctor.setAccessible(true);
-            return ctor.newInstance(textureId);
-        } catch (Throwable ignored) {
-        }
-
-        String baseName = abstractTextureClass.getName();
-        if (baseName.startsWith("net.minecraft.class_")) {
-            try {
-                int baseNum = Integer.parseInt(baseName.substring("net.minecraft.class_".length()));
-                for (int offset : new int[]{-1, 1, -2, 2, -3, 3, -5, 5, -10, 10}) {
-                    String candidateName = "net.minecraft.class_" + (baseNum + offset);
-                    try {
-                        Class<?> candidate = Class.forName(candidateName);
-                        if (abstractTextureClass.isAssignableFrom(candidate)) {
-                            try {
-                                var ctor = candidate.getDeclaredConstructor(idClass);
-                                ctor.setAccessible(true);
-                                return ctor.newInstance(textureId);
-                            } catch (ReflectiveOperationException ignored) {}
-                        }
-                    } catch (ClassNotFoundException ignored) {}
-                }
-            } catch (NumberFormatException ignored) {}
-        }
-
-        return null;
-    }
-
-    private static void ensureTextureLoaded(Object texture, Minecraft mc) {
-        try {
-            Object resourceManager = mc.getResourceManager();
-
-            for (Method m : texture.getClass().getMethods()) {
-                if (m.getParameterCount() == 1
-                        && m.getParameterTypes()[0].isInstance(resourceManager)
-                        && m.getReturnType() == void.class) {
-                    m.setAccessible(true);
-                    try {
-                        m.invoke(texture, resourceManager);
-                        return;
-                    } catch (Throwable ignored) {}
-                }
-            }
-        } catch (Throwable ignored) {}
-    }
-
-    private static void resolveTextureMethods(Object textureManager, Identifier textureId) {
-        Class<?> idClass = textureId.getClass();
-
-        for (Method m : textureManager.getClass().getMethods()) {
-            if (m.getParameterCount() != 1) continue;
-            if (!m.getParameterTypes()[0].isAssignableFrom(idClass)) continue;
-            if (m.getReturnType().isPrimitive() || m.getReturnType() == void.class) continue;
-            if (Identifier.class.isAssignableFrom(m.getReturnType())) continue;
-
-            m.setAccessible(true);
-            cachedGetTextureMethod = m;
-            return;
-        }
     }
 }
