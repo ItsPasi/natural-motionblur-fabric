@@ -81,7 +81,7 @@ public class MixinLevelRenderer {
         }
     }
 
-    // Apply post-render blur
+    // Apply post-entity blur
     @Inject(method = "renderLevel", at = @At("TAIL"))
     private void naturalMotionBlur$onRenderLevelTail(GraphicsResourceAllocator resourceAllocator, DeltaTracker deltaTracker, boolean renderOutline, CameraRenderState cameraState, Matrix4fc modelViewMatrix, GpuBufferSlice terrainFog, Vector4f fogColor, boolean shouldRenderSky, ChunkSectionsToRender chunkSectionsToRender, CallbackInfo ci) {
         ConfigEntries config = ConfigManager.getConfig();

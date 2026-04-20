@@ -2,7 +2,7 @@ package net.natural.motionblur.shader;
 
 import net.natural.motionblur.MonitorInfoProvider;
 
-// Tracks per-frame timing and exposes FPS + display refresh rate to ShaderManager.
+// Tracks per-frame timing and exposes FPS + display refresh rate to ShaderManager
 public class FrameTimer {
 
     private long  lastNano   = 0;

@@ -152,7 +152,7 @@ public class RecordingShaderManager {
 
         int desired = 1;
         if (recSmoothedFPS > 0.0f && refreshRate > 0) {
-            desired = Math.max(1, Math.min(MAX_HISTORY, Math.round(recSmoothedFPS / refreshRate)));
+            desired = Math.clamp(Math.round(recSmoothedFPS / refreshRate), 1, MAX_HISTORY);
         }
 
         if (desired == recLockedN) {
@@ -503,5 +503,4 @@ public class RecordingShaderManager {
         } catch (Throwable ignored) {}
         return null;
     }
-
 }
