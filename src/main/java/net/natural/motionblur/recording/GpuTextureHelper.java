@@ -5,7 +5,7 @@ import com.mojang.blaze3d.textures.GpuTexture;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 
-//Extracts the raw OpenGL texture integer ID from a GpuTexture
+// Extracts the raw OpenGL texture integer ID from a GpuTexture
 public class GpuTextureHelper {
 
     private static Method  cachedMethod = null;

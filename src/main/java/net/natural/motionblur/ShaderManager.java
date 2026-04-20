@@ -61,7 +61,7 @@ public class ShaderManager {
         ConfigEntries config = ConfigManager.getConfig();
         Minecraft     client = Minecraft.getInstance();
 
-        // Accumulation / Frame Blending — handled separately
+        // Accumulation / Frame Blending handled separately
         if (config.blurAlgorithm == ConfigEntries.BlurAlgorithm.FRAME_BLENDING) {
             FrameBlendingManager.applyFrameBlending(
                     frameAllocator, frameTimer.getFPS(), frameTimer.getRefreshRate());

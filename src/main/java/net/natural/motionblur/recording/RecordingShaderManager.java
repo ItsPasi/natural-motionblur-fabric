@@ -437,7 +437,6 @@ public class RecordingShaderManager {
         recPendingN = 1;
         recPendingFrames = 0;
         recSmoothedFPS = 0.0f;
-        // keep chain state isolated across mode switches
     }
 
     public static void destroy() {
