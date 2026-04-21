@@ -53,15 +53,7 @@ public class ShaderManager {
 
     private static boolean shouldRun() {
         ConfigEntries config = ConfigManager.getConfig();
-        return config.enabled && getEffectiveMotionBlurStrength(config) != 0.0F;
-    }
-
-    private static float getEffectiveMotionBlurStrength(ConfigEntries config) {
-        return config.blurAlgorithm == ConfigEntries.BlurAlgorithm.HYBRID_BLENDING ? 1.0F : config.motionBlurStrength;
-    }
-
-    private static boolean allowsRefreshRateScaling(ConfigEntries config) {
-        return config.blurAlgorithm == ConfigEntries.BlurAlgorithm.VELOCITY_BASED;
+        return config.enabled && config.getEffectiveMotionBlurStrength() != 0.0F;
     }
 
     private static void applyBlurInternal(BlurPass pass) {
@@ -79,21 +71,21 @@ public class ShaderManager {
         }
 
         if (config.blurAlgorithm == ConfigEntries.BlurAlgorithm.ACCUMULATION_MAX) {
-            FrameBlendingManager.applyAccumulationMax(frameAllocator, getEffectiveMotionBlurStrength(config));
+            FrameBlendingManager.applyAccumulationMax(frameAllocator, config.getEffectiveMotionBlurStrength());
             return;
         }
 
         if (config.blurAlgorithm == ConfigEntries.BlurAlgorithm.ACCUMULATION_MIX) {
-            FrameBlendingManager.applyAccumulationMix(frameAllocator, getEffectiveMotionBlurStrength(config));
+            FrameBlendingManager.applyAccumulationMix(frameAllocator, config.getEffectiveMotionBlurStrength());
             return;
         }
 
         // Velocity blur
         BlurStrengthCalculator.Result blur = strengthCalc.calculate(
-                getEffectiveMotionBlurStrength(config),
+                config.getEffectiveMotionBlurStrength(),
                 frameTimer.getFPS(),
                 frameTimer.getRefreshRate(),
-                config.refreshRateScaling && allowsRefreshRateScaling(config));
+                config.refreshRateScaling && config.allowsRefreshRateScaling());
         float viewW = client.getMainRenderTarget().width;
         float viewH = client.getMainRenderTarget().height;
 
