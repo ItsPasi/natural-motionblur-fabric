@@ -78,30 +78,31 @@ public class MixinLevelRenderer {
     )
     private void naturalMotionBlur$beforeRenderEntities(CallbackInfo ci) {
         ConfigEntries config = ConfigManager.getConfig();
-        if (config.blurAlgorithm == ConfigEntries.BlurAlgorithm.VELOCITY_BASED) {
-            if (naturalMotionBlur$shouldUseSpecialSingleBlur()) {
-                ShaderManager.applyF5EntityRideBlur();
-            } else {
-                ShaderManager.applyPreEntityBlur();
-            }
+
+        if (!config.usesVelocityBlur()) {
+            return;
         }
+        if (naturalMotionBlur$shouldUseSpecialSingleBlur()) {
+            ShaderManager.applyF5EntityRideBlur();
+            return;
+        }
+        ShaderManager.applyPreEntityBlur();
     }
 
     // Apply post-entity blur
     @Inject(method = "renderLevel", at = @At("TAIL"))
-    private void naturalMotionBlur$onRenderLevelTail(
-            GraphicsResourceAllocator resourceAllocator,
-            DeltaTracker deltaTracker,
-            boolean renderOutline,
-            Camera camera,
-            GameRenderer gameRenderer,
-            Matrix4f modelViewMatrix,
-            Matrix4f projectionMatrix,
-            CallbackInfo ci
-    ) {
+    private void naturalMotionBlur$onRenderLevelTail(GraphicsResourceAllocator resourceAllocator, DeltaTracker deltaTracker, boolean renderOutline, Camera camera, GameRenderer gameRenderer, Matrix4f modelViewMatrix, Matrix4f projectionMatrix, CallbackInfo ci) {
         ConfigEntries config = ConfigManager.getConfig();
-        if (config.blurAlgorithm != ConfigEntries.BlurAlgorithm.VELOCITY_BASED
-                || !naturalMotionBlur$shouldUseSpecialSingleBlur()) {
+        boolean specialSingleBlur = naturalMotionBlur$shouldUseSpecialSingleBlur();
+
+        if (config.blurAlgorithm == ConfigEntries.BlurAlgorithm.HYBRID_BLENDING) {
+            if (!specialSingleBlur) {
+                ShaderManager.applyPostRenderBlur();
+            } else {
+                ShaderManager.applyFrameBlendingOnly();
+            }
+        } else if (config.blurAlgorithm != ConfigEntries.BlurAlgorithm.VELOCITY_BASED
+                || !specialSingleBlur) {
             ShaderManager.applyPostRenderBlur();
         }
         ShaderManager.clearFrameAllocator();

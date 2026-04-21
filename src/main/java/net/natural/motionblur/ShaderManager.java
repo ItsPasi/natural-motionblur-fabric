@@ -46,13 +46,22 @@ public class ShaderManager {
         cameraState.setFrame(modelView, prevModelView, projection, prevProjection, dx, dy, dz);
     }
 
-    public static void applyPreEntityBlur()    { if (shouldRun()) applyBlurInternal(BlurPass.NORMAL_PRE);  }
-    public static void applyF5EntityRideBlur() { if (shouldRun()) applyBlurInternal(BlurPass.SPECIAL_F5);  }
-    public static void applyPostRenderBlur()   { if (shouldRun()) applyBlurInternal(BlurPass.NORMAL_POST); }
+    public static void applyPreEntityBlur()     { if (shouldRun()) applyBlurInternal(BlurPass.NORMAL_PRE);  }
+    public static void applyF5EntityRideBlur()  { if (shouldRun()) applyBlurInternal(BlurPass.SPECIAL_F5);  }
+    public static void applyPostRenderBlur()    { if (shouldRun()) applyBlurInternal(BlurPass.NORMAL_POST); }
+    public static void applyFrameBlendingOnly() { if (shouldRun()) applyFrameBlendingInternal(); }
 
     private static boolean shouldRun() {
         ConfigEntries config = ConfigManager.getConfig();
-        return config.enabled && config.motionBlurStrength != 0;
+        return config.enabled && getEffectiveMotionBlurStrength(config) != 0.0F;
+    }
+
+    private static float getEffectiveMotionBlurStrength(ConfigEntries config) {
+        return config.blurAlgorithm == ConfigEntries.BlurAlgorithm.HYBRID_BLENDING ? 1.0F : config.motionBlurStrength;
+    }
+
+    private static boolean allowsRefreshRateScaling(ConfigEntries config) {
+        return config.blurAlgorithm == ConfigEntries.BlurAlgorithm.VELOCITY_BASED;
     }
 
     private static void applyBlurInternal(BlurPass pass) {
@@ -63,25 +72,28 @@ public class ShaderManager {
 
         // Accumulation / Frame Blending handled separately
         if (config.blurAlgorithm == ConfigEntries.BlurAlgorithm.FRAME_BLENDING) {
-            FrameBlendingManager.applyFrameBlending(
-                    frameAllocator, frameTimer.getFPS(), frameTimer.getRefreshRate());
+            if (pass == BlurPass.NORMAL_POST) {
+                applyFrameBlendingInternal();
+            }
             return;
         }
+
         if (config.blurAlgorithm == ConfigEntries.BlurAlgorithm.ACCUMULATION_MAX) {
-            FrameBlendingManager.applyAccumulationMax(frameAllocator, config.motionBlurStrength);
+            FrameBlendingManager.applyAccumulationMax(frameAllocator, getEffectiveMotionBlurStrength(config));
             return;
         }
+
         if (config.blurAlgorithm == ConfigEntries.BlurAlgorithm.ACCUMULATION_MIX) {
-            FrameBlendingManager.applyAccumulationMix(frameAllocator, config.motionBlurStrength);
+            FrameBlendingManager.applyAccumulationMix(frameAllocator, getEffectiveMotionBlurStrength(config));
             return;
         }
 
         // Velocity blur
         BlurStrengthCalculator.Result blur = strengthCalc.calculate(
-                config.motionBlurStrength,
+                getEffectiveMotionBlurStrength(config),
                 frameTimer.getFPS(),
                 frameTimer.getRefreshRate(),
-                config.refreshRateScaling);
+                config.refreshRateScaling && allowsRefreshRateScaling(config));
         float viewW = client.getMainRenderTarget().width;
         float viewH = client.getMainRenderTarget().height;
 
@@ -93,6 +105,7 @@ public class ShaderManager {
         float dx = cameraState.getDx(), dy = cameraState.getDy(), dz = cameraState.getDz();
         float strength = blur.strength();
         int sampleAmount = blur.sampleAmount();
+        int blurAlgorithm = config.blurAlgorithm.ordinal();
 
         Consumer<RenderPass> uniformSetter = (RenderPass rp) -> {
             trySetUniform(rp, "mvInverse",         mvInv);
@@ -105,24 +118,39 @@ public class ShaderManager {
             trySetUniform(rp, "BlendFactor",       new float[]{strength});
             trySetUniform(rp, "sampleCount",       new int[]{sampleAmount});
             trySetUniform(rp, "motionBlurSamples", new int[]{sampleAmount});
-            trySetUniform(rp, "blurAlgorithm",     new int[]{config.blurAlgorithm.ordinal()});
+            trySetUniform(rp, "blurAlgorithm",     new int[]{blurAlgorithm});
             trySetUniform(rp, "useDepth",          new int[]{1});
         };
 
         switch (pass) {
             case NORMAL_PRE -> {
                 PostChain p = getPreProcessor(client);
-                if (p != null) p.process(client.getMainRenderTarget(), frameAllocator, uniformSetter);
+                if (p != null) {
+                    p.process(client.getMainRenderTarget(), frameAllocator, uniformSetter);
+                }
             }
             case SPECIAL_F5 -> {
                 PostChain p = getF5Processor(client);
-                if (p != null) p.process(client.getMainRenderTarget(), frameAllocator, uniformSetter);
+                if (p != null) {
+                    p.process(client.getMainRenderTarget(), frameAllocator, uniformSetter);
+                }
             }
             case NORMAL_POST -> {
                 PostChain p = getPostProcessor(client);
-                if (p != null) p.process(client.getMainRenderTarget(), frameAllocator, uniformSetter);
+                if (p != null) {
+                    p.process(client.getMainRenderTarget(), frameAllocator, uniformSetter);
+                }
+                if (config.blurAlgorithm == ConfigEntries.BlurAlgorithm.HYBRID_BLENDING) {
+                    applyFrameBlendingInternal();
+                }
             }
         }
+    }
+
+    private static void applyFrameBlendingInternal() {
+        if (frameAllocator == null) return;
+        FrameBlendingManager.applyFrameBlending(
+                frameAllocator, frameTimer.getFPS(), frameTimer.getRefreshRate());
     }
 
     // Shader cache
