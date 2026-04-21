@@ -72,6 +72,7 @@ public class MixinLevelRenderer {
     @Inject(method = "submitEntities", at = @At("HEAD"))
     private void naturalMotionBlur$beforeSubmitEntities(PoseStack poseStack, LevelRenderState levelRenderState, SubmitNodeCollector output, CallbackInfo ci) {
         ConfigEntries config = ConfigManager.getConfig();
+
         if (!config.usesVelocityBlur()) {
             return;
         }
@@ -86,7 +87,6 @@ public class MixinLevelRenderer {
     @Inject(method = "renderLevel", at = @At("TAIL"))
     private void naturalMotionBlur$onRenderLevelTail(GraphicsResourceAllocator resourceAllocator, DeltaTracker deltaTracker, boolean renderOutline, CameraRenderState cameraState, Matrix4fc modelViewMatrix, GpuBufferSlice terrainFog, Vector4f fogColor, boolean shouldRenderSky, ChunkSectionsToRender chunkSectionsToRender, CallbackInfo ci) {
         ConfigEntries config = ConfigManager.getConfig();
-
         boolean specialSingleBlur = naturalMotionBlur$shouldUseSpecialSingleBlur();
 
         if (config.blurAlgorithm == ConfigEntries.BlurAlgorithm.HYBRID_BLENDING) {
