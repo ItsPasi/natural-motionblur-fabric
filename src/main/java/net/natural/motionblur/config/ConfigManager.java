@@ -41,6 +41,7 @@ public class ConfigManager {
     // Config Screen Interface
     public static Screen createConfigScreen(Screen parent) {
         ConfigEntries cfg = getConfig();
+        sanitizeConfigState(cfg);
 
         var refreshRateScalingOption = Option.<Boolean>createBuilder()
                 .name(Component.literal("Refresh Rate Scaling"))
@@ -54,7 +55,7 @@ public class ConfigManager {
                         .append(Component.literal("60 FPS or less on a 60 Hz monitor → strength is not changed").withStyle(s -> s.withColor(0x5599FF)))))
                 .binding(true, () -> cfg.refreshRateScaling, newValue -> cfg.refreshRateScaling = newValue)
                 .controller(opt -> BooleanControllerBuilder.create(opt).coloured(true))
-                .available(cfg.blurAlgorithm == ConfigEntries.BlurAlgorithm.VELOCITY_BASED)
+                .available(cfg.allowsRefreshRateScaling())
                 .build();
 
         var strengthOption = Option.<Float>createBuilder()
@@ -65,7 +66,7 @@ public class ConfigManager {
                         Default setting (1.0) blurs frames ideally in correlation to the framerate.""")))
                 .binding(1.0F, () -> cfg.motionBlurStrength, newValue -> cfg.motionBlurStrength = newValue)
                 .controller(opt -> FloatSliderControllerBuilder.create(opt).range(0f, 2f).step(0.1f))
-                .available(cfg.blurAlgorithm != ConfigEntries.BlurAlgorithm.FRAME_BLENDING)
+                .available(cfg.showsStrengthSlider())
                 .build();
 
         var algorithmOption = Option.<ConfigEntries.BlurAlgorithm>createBuilder()
@@ -73,11 +74,14 @@ public class ConfigManager {
                 .description(OptionDescription.of(Component.empty()
                         .append(Component.literal("Changes how motion blur is rendered.\n\n"))
                         .append(Component.literal("Velocity Based").withStyle(style -> style.withColor(0x5599FF).withBold(true))).append(Component.literal(" (Recommended)").withStyle(style -> style.withColor(0xAAAAAA)))
-                        .append(Component.literal("\nUses velocity information to blur in the direction of movement.\n"))
-                        .append(Component.literal("The same technique used by shader packs like BSL, Complementary and Labymod client. Improved upon to fix issues with excessive blur.\n\n").withStyle(style -> style.withColor(0xAAAAAA).withItalic(true)))
-                        .append(Component.literal("Frame Blending").withStyle(style -> style.withColor(0x5599FF).withBold(true)))
+                        .append(Component.literal("\nUses velocity information to blur in the direction of movement. This is the only blur option with no increase in perceived input lag.\n"))
+                        .append(Component.literal("Similar to shader packs like BSL, Complementary and Labymod client, but improved and optimized.\n\n").withStyle(style -> style.withColor(0xAAAAAA).withItalic(true)))
+                        .append(Component.literal("Frame Blending").withStyle(style -> style.withColor(0xFFFF55).withBold(true)))
                         .append(Component.literal("\nBlends additional frames between each displayed frame into the current image.\n"))
                         .append(Component.literal("Recreates the effect of post-processing tools like blur by f0e, Premiere Pro, and DaVinci Resolve.\n\n").withStyle(style -> style.withColor(0xAAAAAA).withItalic(true)))
+                        .append(Component.literal("Hybrid Blending").withStyle(style -> style.withColor(0xFFFF55).withBold(true)))
+                        .append(Component.literal("\nRuns velocity based blur and frame blending at the same time.\n"))
+                        .append(Component.literal("Creates a smoother result with less artifacts but may impact performance.\n\n").withStyle(style -> style.withColor(0xAAAAAA).withItalic(true)))
                         .append(Component.literal("Accumulation MAX").withStyle(style -> style.withColor(0xFF5555).withBold(true)))
                         .append(Component.literal("\nCreates a blur trail with high brightness.\n"))
                         .append(Component.literal("Matches LABYMOD MIX, LUNAR V1, BLC 2.0.\n\n").withStyle(style -> style.withColor(0xAAAAAA).withItalic(true)))
@@ -86,14 +90,20 @@ public class ConfigManager {
                         .append(Component.literal("Matches LABYMOD MAX, LUNAR V2/V3, BLC 3.0/Badlion.").withStyle(style -> style.withColor(0xAAAAAA).withItalic(true)))))
                 .binding(ConfigEntries.BlurAlgorithm.VELOCITY_BASED, () -> cfg.blurAlgorithm, newValue -> cfg.blurAlgorithm = newValue)
                 .listener((opt, newValue) -> {
+                    if (newValue == ConfigEntries.BlurAlgorithm.HYBRID_BLENDING) {
+                        cfg.refreshRateScaling = false;
+                        cfg.motionBlurStrength = 1.0F;
+                    }
                     refreshRateScalingOption.setAvailable(newValue == ConfigEntries.BlurAlgorithm.VELOCITY_BASED);
-                    strengthOption.setAvailable(newValue != ConfigEntries.BlurAlgorithm.FRAME_BLENDING);
+                    strengthOption.setAvailable(newValue != ConfigEntries.BlurAlgorithm.FRAME_BLENDING
+                            && newValue != ConfigEntries.BlurAlgorithm.HYBRID_BLENDING);
                 })
                 .controller(opt -> EnumControllerBuilder.create(opt)
                         .enumClass(ConfigEntries.BlurAlgorithm.class)
                         .valueFormatter(value -> switch (value) {
-                            case VELOCITY_BASED  -> Component.literal("Velocity Based").withStyle(s -> s.withColor(0x5599FF));
-                            case FRAME_BLENDING  -> Component.literal("Frame Blending").withStyle(s -> s.withColor(0x5599FF));
+                            case VELOCITY_BASED   -> Component.literal("Velocity Based").withStyle(s -> s.withColor(0x5599FF));
+                            case FRAME_BLENDING   -> Component.literal("Frame Blending").withStyle(s -> s.withColor(0xFFFF55));
+                            case HYBRID_BLENDING  -> Component.literal("Hybrid Blending").withStyle(s -> s.withColor(0xFFFF55));
                             case ACCUMULATION_MAX -> Component.literal("Accumulation MAX").withStyle(s -> s.withColor(0xFF5555));
                             case ACCUMULATION_MIX -> Component.literal("Accumulation MIX").withStyle(s -> s.withColor(0xFF5555));
                         }))
@@ -199,6 +209,20 @@ public class ConfigManager {
                 try { config.blurAlgorithm = ConfigEntries.BlurAlgorithm.valueOf(json.get("blurAlgorithm").getAsString().toUpperCase()); }
                 catch (Exception e) { config.blurAlgorithm = ConfigEntries.BlurAlgorithm.VELOCITY_BASED; errorMessages.add("Blur Algorithm option of \"Natural Motion Blur\" was invalid and has been reset to default (Velocity Based)."); modified = true; }
             }
+            ConfigEntries sanitizedConfig = new ConfigEntries();
+            sanitizedConfig.enabled = config.enabled;
+            sanitizedConfig.refreshRateScaling = config.refreshRateScaling;
+            sanitizedConfig.motionBlurStrength = config.motionBlurStrength;
+            sanitizedConfig.recordingOverlayEnabled = config.recordingOverlayEnabled;
+            sanitizedConfig.recordingOverlayTargetFPS = config.recordingOverlayTargetFPS;
+            sanitizedConfig.blurAlgorithm = config.blurAlgorithm;
+            sanitizeConfigState(sanitizedConfig);
+            if (sanitizedConfig.refreshRateScaling != config.refreshRateScaling
+                    || sanitizedConfig.motionBlurStrength != config.motionBlurStrength) {
+                config.refreshRateScaling = sanitizedConfig.refreshRateScaling;
+                config.motionBlurStrength = sanitizedConfig.motionBlurStrength;
+                modified = true;
+            }
             if (json.has("recordingOverlayTargetFPS")) {
                 try {
                     int hz = json.get("recordingOverlayTargetFPS").getAsInt();
@@ -223,7 +247,17 @@ public class ConfigManager {
         return Boolean.parseBoolean(s);
     }
 
+    private static void sanitizeConfigState(ConfigEntries cfg) {
+        if (!cfg.allowsRefreshRateScaling()) {
+            cfg.refreshRateScaling = false;
+        }
+        if (cfg.locksStrengthToOne()) {
+            cfg.motionBlurStrength = 1.0F;
+        }
+    }
+
     public static void saveConfig() {
+        if (config != null) sanitizeConfigState(config);
         File configFile = getConfigFile();
         try {
             FileUtils.write(configFile, GSON.toJson(config), StandardCharsets.UTF_8);
