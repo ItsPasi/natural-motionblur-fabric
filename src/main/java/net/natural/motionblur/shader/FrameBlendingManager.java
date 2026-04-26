@@ -17,7 +17,6 @@ import net.natural.motionblur.mixin.PostChainAccessor;
 import net.natural.motionblur.mixin.PostPassAccessor;
 import net.natural.motionblur.mixin.ShaderManagerAccessor;
 
-import java.lang.reflect.Field;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -25,22 +24,25 @@ import java.util.Set;
 
 public class FrameBlendingManager {
 
-
     private static final int MAX_HISTORY = 8;
-    private static final int WINDOW_CHANGE_HOLD_FRAMES = 6;
+
+    private static final String[] SAMPLE_NAMES = new String[MAX_HISTORY];
+    static {
+        for (int i = 0; i < MAX_HISTORY; i++) SAMPLE_NAMES[i] = "Sample" + i;
+    }
 
     // Frame blending history
     private static final RenderTarget[] historyTargets = new RenderTarget[MAX_HISTORY];
+    private static final MutableTextureInput[] historyInputs = new MutableTextureInput[MAX_HISTORY];
     private static int historyWriteIndex = 0;
     private static int historyFilled     = 0;
 
     private static int   lockedN        = 1;
-    private static int   pendingN       = 1;
-    private static int   pendingFrames  = 0;
     private static float smoothedFPS    = 0;
 
     // Accumulation
     private static RenderTarget prevTarget = null;
+    private static MutableTextureInput prevInput = null;
 
     private static int targetW = 0;
     private static int targetH = 0;
@@ -52,17 +54,20 @@ public class FrameBlendingManager {
 
     private static final Set<String> loadErrorLogged = new HashSet<>();
 
-    // Reflection cache for accumulation target lookups only
-    private static Field cachedTargetsField = null;
-    private static boolean targetsFieldSearched = false;
-
     // Public API
 
     public static void applyFrameBlending(GraphicsResourceAllocator allocator, float fps, int refreshRate) {
         Minecraft client = Minecraft.getInstance();
         RenderTarget main = client.getMainRenderTarget();
-        ensureTargets(main.width, main.height);
         updateLockedWindowSize(fps, refreshRate);
+
+        if (lockedN <= 1) {
+            historyWriteIndex = 0;
+            historyFilled = 0;
+            return;
+        }
+
+        ensureTargets(main.width, main.height);
 
         pushHistoryFrame(main);
         int sampleCount = Math.min(historyFilled, lockedN);
@@ -80,7 +85,14 @@ public class FrameBlendingManager {
             RenderTarget src = (i < sampleCount)
                     ? historyTargets[(oldestIndex + i) % MAX_HISTORY]
                     : fallback;
-            setSampler(pass, "Sample" + i, new PersistentTextureInput("Sample" + i, src));
+            MutableTextureInput input = historyInputs[i];
+            if (input == null) {
+                input = new MutableTextureInput(SAMPLE_NAMES[i], src);
+                historyInputs[i] = input;
+            } else {
+                input.setTarget(src);
+            }
+            setSampler(pass, SAMPLE_NAMES[i], input);
         }
 
         float invSampleCount = 1.0f / sampleCount;
@@ -104,6 +116,7 @@ public class FrameBlendingManager {
                 historyTargets[i].destroyBuffers();
                 historyTargets[i] = null;
             }
+            historyInputs[i] = null;
         }
         if (prevTarget != null) {
             prevTarget.destroyBuffers();
@@ -114,15 +127,12 @@ public class FrameBlendingManager {
         historyWriteIndex = 0;
         historyFilled = 0;
         lockedN = 1;
-        pendingN = 1;
-        pendingFrames = 0;
         smoothedFPS = 0;
+        prevInput = null;
         cachedCombineChain = null;
         cachedAccumMaxChain = null;
         cachedAccumMixChain = null;
         loadErrorLogged.clear();
-        cachedTargetsField = null;
-        targetsFieldSearched = false;
     }
 
     // Accumulation
@@ -141,7 +151,12 @@ public class FrameBlendingManager {
 
         // Inject our prevTarget directly as the "Prev" sampler (same technique as frame blending)
         if (prevTarget != null) {
-            setSampler(pass, "Prev", new PersistentTextureInput("Prev", prevTarget));
+            if (prevInput == null) {
+                prevInput = new MutableTextureInput("Prev", prevTarget);
+            } else {
+                prevInput.setTarget(prevTarget);
+            }
+            setSampler(pass, "Prev", prevInput);
         }
 
         float factor = strengthToBlendFactor(strength);
@@ -178,16 +193,7 @@ public class FrameBlendingManager {
         if (smoothedFPS > 0.0f && refreshRate > 0) {
             desired = Math.clamp((int) Math.ceil(smoothedFPS / refreshRate), 1, MAX_HISTORY);
         }
-        if (desired == lockedN) {
-            pendingN = desired; pendingFrames = 0; return;
-        }
-        if (desired != pendingN) {
-            pendingN = desired; pendingFrames = 1; return;
-        }
-        pendingFrames++;
-        if (pendingFrames >= WINDOW_CHANGE_HOLD_FRAMES) {
-            lockedN = pendingN; pendingFrames = 0;
-        }
+        lockedN = desired;
     }
 
     // Targets & copying
@@ -197,6 +203,7 @@ public class FrameBlendingManager {
         for (int i = 0; i < historyTargets.length; i++) {
             if (historyTargets[i] != null) historyTargets[i].destroyBuffers();
             historyTargets[i] = new MainTarget(w, h);
+            historyInputs[i] = null;
         }
         if (prevTarget != null) prevTarget.destroyBuffers();
         prevTarget = new MainTarget(w, h);
@@ -204,8 +211,7 @@ public class FrameBlendingManager {
         targetH = h;
         historyWriteIndex = 0;
         historyFilled = 0;
-        pendingFrames = 0;
-        pendingN = lockedN;
+        prevInput = null;
     }
 
     private static void copyFramebuffer(RenderTarget src, RenderTarget dst) {
@@ -231,26 +237,30 @@ public class FrameBlendingManager {
         for (int i = 0; i < inputs.size(); i++) {
             PostPass.Input input = inputs.get(i);
             if (input instanceof PostPass.TargetInput targetInput && samplerName.equals(targetInput.samplerName())) {
-                inputs.set(i, replacement);
+                if (input != replacement) inputs.set(i, replacement);
                 return;
             }
             if (input instanceof PostPass.TextureInput textureInput && samplerName.equals(textureInput.samplerName())) {
-                inputs.set(i, replacement);
+                if (input != replacement) inputs.set(i, replacement);
                 return;
             }
-            if (input instanceof PersistentTextureInput persistentInput && samplerName.equals(persistentInput.samplerName)) {
-                inputs.set(i, replacement);
+            if (input instanceof MutableTextureInput persistentInput && samplerName.equals(persistentInput.samplerName)) {
+                if (input != replacement) inputs.set(i, replacement);
                 return;
             }
         }
     }
 
-    private static class PersistentTextureInput implements PostPass.Input {
+    private static class MutableTextureInput implements PostPass.Input {
         private final String samplerName;
-        private final RenderTarget target;
+        private RenderTarget target;
 
-        PersistentTextureInput(String samplerName, RenderTarget target) {
+        MutableTextureInput(String samplerName, RenderTarget target) {
             this.samplerName = samplerName;
+            this.target = target;
+        }
+
+        void setTarget(RenderTarget target) {
             this.target = target;
         }
 
@@ -259,13 +269,13 @@ public class FrameBlendingManager {
 
         @Override
         public void bindTo(RenderPass pass, Map<ResourceLocation, ResourceHandle<RenderTarget>> targets) {
-            if (target.getColorTexture() != null) {
+            if (target != null && target.getColorTexture() != null) {
                 pass.bindSampler(this.samplerName + "Sampler", target.getColorTexture());
             }
         }
     }
 
-    // PostChain loading & targets
+    // PostChain loading
 
     private static PostChain loadChain(Minecraft client, String shaderName) {
         try {
@@ -276,11 +286,10 @@ public class FrameBlendingManager {
                     ResourceLocation.fromNamespaceAndPath(NaturalMotionBlurMod.ID, shaderName),
                     LevelTargetBundle.MAIN_TARGETS);
             loadErrorLogged.remove(shaderName);
-            // Reset reflection cache if chain instance changed
             switch (shaderName) {
-                case "frame_blending" -> { if (result != cachedCombineChain) { cachedCombineChain = result; resetTargetsFieldCache(); } }
-                case "accumulation_max" -> { if (result != cachedAccumMaxChain) { cachedAccumMaxChain = result; resetTargetsFieldCache(); } }
-                case "accumulation_mix" -> { if (result != cachedAccumMixChain) { cachedAccumMixChain = result; resetTargetsFieldCache(); } }
+                case "frame_blending" -> { if (result != cachedCombineChain) cachedCombineChain = result; }
+                case "accumulation_max" -> { if (result != cachedAccumMaxChain) cachedAccumMaxChain = result; }
+                case "accumulation_mix" -> { if (result != cachedAccumMixChain) cachedAccumMixChain = result; }
             }
             return result;
         } catch (Exception e) {
@@ -288,11 +297,6 @@ public class FrameBlendingManager {
                 System.err.println("[NaturalMotionBlur] Failed to load " + shaderName + " shader: " + e.getMessage());
             return null;
         }
-    }
-
-    private static void resetTargetsFieldCache() {
-        cachedTargetsField = null;
-        targetsFieldSearched = false;
     }
 
     // Uniform helpers

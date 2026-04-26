@@ -21,23 +21,28 @@ import net.natural.motionblur.mixin.PostChainAccessor;
 import net.natural.motionblur.mixin.PostPassAccessor;
 import net.natural.motionblur.mixin.ShaderManagerAccessor;
 import org.lwjgl.glfw.GLFW;
-import org.lwjgl.opengl.GL11;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
 public class RecordingShaderManager {
 
     private static final int MAX_HISTORY = 8;
-    private static final int WINDOW_CHANGE_HOLD_FRAMES = 6;
+
+    private static final String[] SAMPLE_NAMES = new String[MAX_HISTORY];
+    static {
+        for (int i = 0; i < MAX_HISTORY; i++) SAMPLE_NAMES[i] = "Sample" + i;
+    }
 
     private static GraphicsResourceAllocator savedAllocator = null;
 
     private static RenderTarget cleanFrameTarget = null;
     private static final RenderTarget[] recHistoryTargets = new RenderTarget[MAX_HISTORY];
+    private static final MutableTextureInput[] recHistoryInputs = new MutableTextureInput[MAX_HISTORY];
+    private static final int[] changedSamplerIndices = new int[MAX_HISTORY];
+    private static final PostPass.Input[] savedSamplerInputs = new PostPass.Input[MAX_HISTORY];
     private static int lastW = 0;
     private static int lastH = 0;
 
@@ -47,14 +52,13 @@ public class RecordingShaderManager {
     private static int     recHistoryWriteIndex    = 0;
     private static int     recHistoryFilled        = 0;
     private static int     recLockedN              = 1;
-    private static int     recPendingN             = 1;
-    private static int     recPendingFrames        = 0;
     private static float   recSmoothedFPS          = 0;
 
     // Cursor overlay
     private static PostChain recCursorChain = null;
     private static final ResourceLocation CURSOR_TEXTURE_ID =
             ResourceLocation.fromNamespaceAndPath(NaturalMotionBlurMod.ID, "textures/gui/obs_cursor.png");
+    private static GpuTextureInput recCursorTextureInput = null;
     private static float   recPrevRawCursorX       = 0;
     private static float   recPrevRawCursorY       = 0;
     private static boolean recPrevRawCursorVisible = false;
@@ -102,7 +106,6 @@ public class RecordingShaderManager {
             if (recHasFirstFrame) {
                 int glTexId = (main.getColorTexture() != null) ? GpuTextureHelper.getGlId(main.getColorTexture()) : 0;
                 if (glTexId != 0) {
-                    GL11.glFinish();
                     SpoutBridge.sendTexture(glTexId, w, h);
                 }
             }
@@ -138,7 +141,12 @@ public class RecordingShaderManager {
         GpuTexture cursorTex = getCursorGpuTexture(mc);
         if (cursorTex == null) return;
 
-        setSampler(cursorPass, new GpuTextureInput("Cursor", cursorTex));
+        if (recCursorTextureInput == null) {
+            recCursorTextureInput = new GpuTextureInput("Cursor", cursorTex);
+        } else {
+            recCursorTextureInput.setTexture(cursorTex);
+        }
+        setSampler(cursorPass, recCursorTextureInput);
 
         float cx = cursor.x, cy = cursor.y, cs = cursor.scale;
         float pdx = prevDrawX, pdy = prevDrawY;
@@ -331,6 +339,13 @@ public class RecordingShaderManager {
         Minecraft mc = Minecraft.getInstance();
         updateLockedWindowSize(fps, refreshRate);
 
+        if (recLockedN <= 1) {
+            recHistoryWriteIndex = 0;
+            recHistoryFilled = 0;
+            recHasFirstFrame = true;
+            return;
+        }
+
         pushHistoryFrame(main);
 
         int sampleCount = Math.min(recHistoryFilled, recLockedN);
@@ -349,17 +364,24 @@ public class RecordingShaderManager {
 
         RenderTarget fallback = recHistoryTargets[oldestIndex];
         List<PostPass.Input> inputs = ((PostPassAccessor) pass).getInputs();
-        List<Integer> changedIndices = new ArrayList<>();
-        List<PostPass.Input> originalInputs = new ArrayList<>();
+        int changedCount = 0;
         for (int i = 0; i < MAX_HISTORY; i++) {
             RenderTarget src = (i < sampleCount)
                     ? recHistoryTargets[(oldestIndex + i) % MAX_HISTORY]
                     : fallback;
-            int idx = findSamplerIndex(inputs, "Sample" + i);
+            int idx = findSamplerIndex(inputs, SAMPLE_NAMES[i]);
             if (idx >= 0) {
-                changedIndices.add(idx);
-                originalInputs.add(inputs.get(idx));
-                inputs.set(idx, new PersistentTextureInput("Sample" + i, src));
+                MutableTextureInput input = recHistoryInputs[i];
+                if (input == null) {
+                    input = new MutableTextureInput(SAMPLE_NAMES[i], src);
+                    recHistoryInputs[i] = input;
+                } else {
+                    input.setTarget(src);
+                }
+                changedSamplerIndices[changedCount] = idx;
+                savedSamplerInputs[changedCount] = inputs.get(idx);
+                inputs.set(idx, input);
+                changedCount++;
             }
         }
 
@@ -370,8 +392,9 @@ public class RecordingShaderManager {
                 trySetUniform(rp, new int[]{sampleCount});
             });
         } finally {
-            for (int i = 0; i < changedIndices.size(); i++) {
-                inputs.set(changedIndices.get(i), originalInputs.get(i));
+            for (int i = 0; i < changedCount; i++) {
+                inputs.set(changedSamplerIndices[i], savedSamplerInputs[i]);
+                savedSamplerInputs[i] = null;
             }
         }
 
@@ -388,10 +411,7 @@ public class RecordingShaderManager {
         if (recSmoothedFPS > 0.0f && refreshRate > 0) {
             desired = Math.clamp(Math.round(recSmoothedFPS / refreshRate), 1, MAX_HISTORY);
         }
-        if (desired == recLockedN) { recPendingN = desired; recPendingFrames = 0; return; }
-        if (desired != recPendingN) { recPendingN = desired; recPendingFrames = 1; return; }
-        recPendingFrames++;
-        if (recPendingFrames >= WINDOW_CHANGE_HOLD_FRAMES) { recLockedN = recPendingN; recPendingFrames = 0; }
+        recLockedN = desired;
     }
 
     private static void pushHistoryFrame(RenderTarget src) {
@@ -427,15 +447,16 @@ public class RecordingShaderManager {
                 recHistoryTargets[i].destroyBuffers();
                 recHistoryTargets[i] = null;
             }
+            recHistoryInputs[i] = null;
+            savedSamplerInputs[i] = null;
         }
         recCombineChain = null;
         recCursorChain = null;
+        recCursorTextureInput = null;
         recHasFirstFrame = false;
         recHistoryWriteIndex = 0;
         recHistoryFilled = 0;
         recLockedN = 1;
-        recPendingN = 1;
-        recPendingFrames = 0;
         recSmoothedFPS = 0.0f;
     }
 
@@ -493,7 +514,7 @@ public class RecordingShaderManager {
             PostPass.Input input = inputs.get(i);
             if (input instanceof PostPass.TargetInput ti && samplerName.equals(ti.samplerName())) return i;
             if (input instanceof PostPass.TextureInput ti && samplerName.equals(ti.samplerName())) return i;
-            if (input instanceof PersistentTextureInput pi && samplerName.equals(pi.samplerName)) return i;
+            if (input instanceof MutableTextureInput pi && samplerName.equals(pi.samplerName)) return i;
             if (input instanceof GpuTextureInput gi && samplerName.equals(gi.samplerName)) return i;
         }
         return -1;
@@ -504,26 +525,30 @@ public class RecordingShaderManager {
         for (int i = 0; i < inputs.size(); i++) {
             PostPass.Input input = inputs.get(i);
             if (input instanceof PostPass.TargetInput ti && "Cursor".equals(ti.samplerName())) {
-                inputs.set(i, replacement); return;
+                if (input != replacement) inputs.set(i, replacement); return;
             }
             if (input instanceof PostPass.TextureInput ti && "Cursor".equals(ti.samplerName())) {
-                inputs.set(i, replacement); return;
+                if (input != replacement) inputs.set(i, replacement); return;
             }
-            if (input instanceof PersistentTextureInput pi && "Cursor".equals(pi.samplerName)) {
-                inputs.set(i, replacement); return;
+            if (input instanceof MutableTextureInput pi && "Cursor".equals(pi.samplerName)) {
+                if (input != replacement) inputs.set(i, replacement); return;
             }
             if (input instanceof GpuTextureInput gi && "Cursor".equals(gi.samplerName)) {
-                inputs.set(i, replacement); return;
+                if (input != replacement) inputs.set(i, replacement); return;
             }
         }
     }
 
-    private static class PersistentTextureInput implements PostPass.Input {
+    private static class MutableTextureInput implements PostPass.Input {
         private final String samplerName;
-        private final RenderTarget target;
+        private RenderTarget target;
 
-        PersistentTextureInput(String samplerName, RenderTarget target) {
+        MutableTextureInput(String samplerName, RenderTarget target) {
             this.samplerName = samplerName;
+            this.target = target;
+        }
+
+        void setTarget(RenderTarget target) {
             this.target = target;
         }
 
@@ -532,7 +557,7 @@ public class RecordingShaderManager {
 
         @Override
         public void bindTo(RenderPass pass, Map<ResourceLocation, ResourceHandle<RenderTarget>> targets) {
-            if (target.getColorTexture() != null) {
+            if (target != null && target.getColorTexture() != null) {
                 pass.bindSampler(this.samplerName + "Sampler", target.getColorTexture());
             }
         }
@@ -540,10 +565,14 @@ public class RecordingShaderManager {
 
     private static class GpuTextureInput implements PostPass.Input {
         private final String samplerName;
-        private final GpuTexture texture;
+        private GpuTexture texture;
 
         GpuTextureInput(String samplerName, GpuTexture texture) {
             this.samplerName = samplerName;
+            this.texture = texture;
+        }
+
+        void setTexture(GpuTexture texture) {
             this.texture = texture;
         }
 
@@ -552,7 +581,9 @@ public class RecordingShaderManager {
 
         @Override
         public void bindTo(RenderPass pass, Map<ResourceLocation, ResourceHandle<RenderTarget>> targets) {
-            pass.bindSampler(this.samplerName + "Sampler", texture);
+            if (texture != null) {
+                pass.bindSampler(this.samplerName + "Sampler", texture);
+            }
         }
     }
 
