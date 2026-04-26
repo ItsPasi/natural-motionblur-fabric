@@ -11,7 +11,7 @@ loom {
 }
 
 String getVersion() {
-	String version = "${project.mod_version}+mc${project.minecraft_version}"
+	String version = "${project.mod_version}+mc${project.minecraft_version_name}"
 	return version
 }
 version = getVersion()

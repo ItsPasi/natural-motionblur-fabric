@@ -30,20 +30,31 @@ public class FrameBlendingManager {
 
     private static final int UBO_SIZE = 16;
     private static final int MAX_HISTORY = 8;
-    private static final int WINDOW_CHANGE_HOLD_FRAMES = 6;
+    private static final int UBO_RING_SIZE = 3;
 
     private static final String PREV_SAMPLER = "Prev";
+    private static final String FRAME_BLEND_UBO = "FrameBlendParamsUniforms";
+    private static final String ACCUM_UBO = "AccumulationUniforms";
+
+    private static final ResourceLocation FRAME_BLENDING_ID = ResourceLocation.fromNamespaceAndPath(NaturalMotionBlurMod.ID, "frame_blending");
+    private static final ResourceLocation ACCUMULATION_MAX_ID = ResourceLocation.fromNamespaceAndPath(NaturalMotionBlurMod.ID, "accumulation_max");
+    private static final ResourceLocation ACCUMULATION_MIX_ID = ResourceLocation.fromNamespaceAndPath(NaturalMotionBlurMod.ID, "accumulation_mix");
+
+    private static final String[] SAMPLE_NAMES = new String[MAX_HISTORY];
+    static {
+        for (int i = 0; i < MAX_HISTORY; i++) SAMPLE_NAMES[i] = "Sample" + i;
+    }
 
     private static PostChain cachedCombineChain = null;
-    private static GpuBuffer combineUBO = null;
+    private static final GpuBuffer[] combineUBORing = new GpuBuffer[UBO_RING_SIZE];
+    private static int combineUBOIndex = 0;
 
     private static final RenderTarget[] historyTargets = new RenderTarget[MAX_HISTORY];
+    private static final MutableTextureInput[] historyInputs = new MutableTextureInput[MAX_HISTORY];
     private static int historyWriteIndex = 0;
     private static int historyFilled     = 0;
 
     private static int   lockedN        = 1;
-    private static int   pendingN       = 1;
-    private static int   pendingFrames  = 0;
     private static float smoothedFPS    = 0;
 
     // Accumulation MAX/MIX
@@ -51,7 +62,7 @@ public class FrameBlendingManager {
     private static PostChain cachedAccumMixChain = null;
     private static GpuBuffer accumSimpleUBO      = null;
     private static RenderTarget prevTarget       = null;
-    private static PersistentTextureInput injectedPrevInput = null;
+    private static MutableTextureInput injectedPrevInput = null;
 
     private static int targetW = 0;
     private static int targetH = 0;
@@ -61,8 +72,15 @@ public class FrameBlendingManager {
     public static void applyFrameBlending(GraphicsResourceAllocator allocator, float fps, int refreshRate) {
         Minecraft client = Minecraft.getInstance();
         RenderTarget main = client.getMainRenderTarget();
-        ensureTargets(main.width, main.height);
         updateLockedWindowSize(fps, refreshRate);
+
+        if (lockedN <= 1) {
+            historyWriteIndex = 0;
+            historyFilled = 0;
+            return;
+        }
+
+        ensureTargets(main.width, main.height);
 
         pushHistoryFrame(main);
         int sampleCount = Math.min(historyFilled, lockedN);
@@ -77,9 +95,10 @@ public class FrameBlendingManager {
         PostPass combinePass = firstPass(combineChain);
         if (combinePass == null) return;
         Map<String, GpuBuffer> combineUniforms = ((PostPassAccessor) combinePass).getCustomUniforms();
-        if (!combineUniforms.containsKey("FrameBlendParamsUniforms")) return;
-        if (combineUBO == null) combineUBO = GpuBufferUtil.createUBO("FrameBlendParamsUniforms", UBO_SIZE);
-        replaceUBO(combineUniforms, "FrameBlendParamsUniforms", combineUBO);
+        if (!combineUniforms.containsKey(FRAME_BLEND_UBO)) return;
+
+        GpuBuffer combineUBO = nextCombineUBO();
+        replaceFrameBlendUBO(combineUniforms, combineUBO);
         writeBlendParamsUBO(combineUBO, 1.0f / sampleCount, sampleCount);
 
         RenderTarget fallback = historyTargets[oldestIndex];
@@ -87,7 +106,14 @@ public class FrameBlendingManager {
             RenderTarget target = (i < sampleCount)
                     ? historyTargets[(oldestIndex + i) % MAX_HISTORY]
                     : fallback;
-            setSampler(combinePass, "Sample" + i, new PersistentTextureInput("Sample" + i, target));
+            MutableTextureInput input = historyInputs[i];
+            if (input == null) {
+                input = new MutableTextureInput(SAMPLE_NAMES[i], target);
+                historyInputs[i] = input;
+            } else {
+                input.setTarget(target);
+            }
+            setSampler(combinePass, SAMPLE_NAMES[i], input);
         }
 
         combineChain.process(main, allocator);
@@ -107,24 +133,32 @@ public class FrameBlendingManager {
                 historyTargets[i].destroyBuffers();
                 historyTargets[i] = null;
             }
+            historyInputs[i] = null;
         }
         if (prevTarget != null) {
             prevTarget.destroyBuffers();
             prevTarget = null;
+        }
+        for (int i = 0; i < combineUBORing.length; i++) {
+            if (combineUBORing[i] != null) {
+                combineUBORing[i].close();
+                combineUBORing[i] = null;
+            }
+        }
+        if (accumSimpleUBO != null) {
+            accumSimpleUBO.close();
+            accumSimpleUBO = null;
         }
         targetW = 0;
         targetH = 0;
         historyWriteIndex = 0;
         historyFilled = 0;
         lockedN = 1;
-        pendingN = 1;
-        pendingFrames = 0;
         smoothedFPS = 0;
         cachedCombineChain = null;
-        combineUBO = null;
+        combineUBOIndex = 0;
         cachedAccumMaxChain = null;
         cachedAccumMixChain = null;
-        accumSimpleUBO = null;
         injectedPrevInput = null;
         loadErrorLogged.clear();
     }
@@ -139,23 +173,7 @@ public class FrameBlendingManager {
             desired = Math.clamp((int)Math.ceil(smoothedFPS / refreshRate), 1, MAX_HISTORY);
         }
 
-        if (desired == lockedN) {
-            pendingN = desired;
-            pendingFrames = 0;
-            return;
-        }
-
-        if (desired != pendingN) {
-            pendingN = desired;
-            pendingFrames = 1;
-            return;
-        }
-
-        pendingFrames++;
-        if (pendingFrames >= WINDOW_CHANGE_HOLD_FRAMES) {
-            lockedN = pendingN;
-            pendingFrames = 0;
-        }
+        lockedN = desired;
     }
 
     private static void pushHistoryFrame(RenderTarget src) {
@@ -185,14 +203,17 @@ public class FrameBlendingManager {
         if (pass == null) return;
 
         Map<String, GpuBuffer> uniforms = ((PostPassAccessor) pass).getCustomUniforms();
-        if (!uniforms.containsKey("AccumulationUniforms")) return;
+        if (!uniforms.containsKey(ACCUM_UBO)) return;
 
-        if (accumSimpleUBO == null) accumSimpleUBO = GpuBufferUtil.createUBO("AccumulationUniforms", UBO_SIZE);
-        replaceUBO(uniforms, "AccumulationUniforms", accumSimpleUBO);
+        if (accumSimpleUBO == null) accumSimpleUBO = GpuBufferUtil.createUBO(ACCUM_UBO, UBO_SIZE);
+        replaceUBO(uniforms, accumSimpleUBO);
         writeFloatUBO(accumSimpleUBO, strengthToBlendFactor(strength));
 
-        if (injectedPrevInput == null)
-            injectedPrevInput = new PersistentTextureInput(PREV_SAMPLER, prevTarget);
+        if (injectedPrevInput == null) {
+            injectedPrevInput = new MutableTextureInput(PREV_SAMPLER, prevTarget);
+        } else {
+            injectedPrevInput.setTarget(prevTarget);
+        }
         setSampler(pass, PREV_SAMPLER, injectedPrevInput);
 
         chain.process(main, allocator);
@@ -210,7 +231,7 @@ public class FrameBlendingManager {
             if (cache == null) return null;
 
             PostChain result = cache.getOrLoadPostChain(
-                    ResourceLocation.fromNamespaceAndPath(NaturalMotionBlurMod.ID, shaderName),
+                    isMax ? ACCUMULATION_MAX_ID : ACCUMULATION_MIX_ID,
                     LevelTargetBundle.MAIN_TARGETS);
 
             if (isMax && result != cachedAccumMaxChain) {
@@ -237,6 +258,7 @@ public class FrameBlendingManager {
         for (int i = 0; i < historyTargets.length; i++) {
             if (historyTargets[i] != null) historyTargets[i].destroyBuffers();
             historyTargets[i] = new MainTarget(w, h);
+            historyInputs[i] = null;
         }
         if (prevTarget != null) prevTarget.destroyBuffers();
         prevTarget = new MainTarget(w, h);
@@ -244,8 +266,6 @@ public class FrameBlendingManager {
         targetH = h;
         historyWriteIndex = 0;
         historyFilled = 0;
-        pendingFrames = 0;
-        pendingN = lockedN;
         injectedPrevInput = null;
     }
 
@@ -267,15 +287,41 @@ public class FrameBlendingManager {
         List<PostPass.Input> inputs = ((PostPassAccessor) pass).getInputs();
         for (int i = 0; i < inputs.size(); i++) {
             if (samplerName.equals(inputs.get(i).samplerName())) {
-                inputs.set(i, replacement);
+                if (inputs.get(i) != replacement) inputs.set(i, replacement);
                 return;
             }
         }
     }
 
-    private static void replaceUBO(Map<String, GpuBuffer> map, String key, GpuBuffer ubo) {
-        GpuBuffer old = map.put(key, ubo);
+    private static void replaceUBO(Map<String, GpuBuffer> map, GpuBuffer ubo) {
+        GpuBuffer old = map.get(FrameBlendingManager.ACCUM_UBO);
+        if (old == ubo) return;
+        old = map.put(FrameBlendingManager.ACCUM_UBO, ubo);
         if (old != null && old != ubo) old.close();
+    }
+
+    private static void replaceFrameBlendUBO(Map<String, GpuBuffer> map, GpuBuffer ubo) {
+        GpuBuffer old = map.get(FRAME_BLEND_UBO);
+        if (old == ubo) return;
+        old = map.put(FRAME_BLEND_UBO, ubo);
+        if (old != null && old != ubo && !isOwnedFrameBlendUBO(old)) old.close();
+    }
+
+    private static boolean isOwnedFrameBlendUBO(GpuBuffer buffer) {
+        for (GpuBuffer owned : combineUBORing) {
+            if (owned == buffer) return true;
+        }
+        return false;
+    }
+
+    private static GpuBuffer nextCombineUBO() {
+        GpuBuffer ubo = combineUBORing[combineUBOIndex];
+        if (ubo == null) {
+            ubo = GpuBufferUtil.createUBO(FRAME_BLEND_UBO, UBO_SIZE);
+            combineUBORing[combineUBOIndex] = ubo;
+        }
+        combineUBOIndex = (combineUBOIndex + 1) % UBO_RING_SIZE;
+        return ubo;
     }
 
     private static void writeFloatUBO(GpuBuffer ubo, float value) {
@@ -306,30 +352,31 @@ public class FrameBlendingManager {
                     ((ShaderManagerAccessor) client.getShaderManager()).getCompilationCache();
             if (cache == null) return null;
 
-            PostChain result = cache.getOrLoadPostChain(
-                    ResourceLocation.fromNamespaceAndPath(NaturalMotionBlurMod.ID, "frame_blending"),
-                    LevelTargetBundle.MAIN_TARGETS);
+            PostChain result = cache.getOrLoadPostChain(FRAME_BLENDING_ID, LevelTargetBundle.MAIN_TARGETS);
 
             if (result != cachedCombineChain) {
                 cachedCombineChain = result;
-                combineUBO = null;
             }
 
             loadErrorLogged.remove("frame_blending");
             return result;
         } catch (Exception e) {
             if (loadErrorLogged.add("frame_blending"))
-                System.err.println("[NaturalMotionBlur] Failed to load " + "frame_blending" + " shader: " + e.getMessage());
+                System.err.println("[NaturalMotionBlur] Failed to load frame_blending shader: " + e.getMessage());
             return null;
         }
     }
 
-    private static class PersistentTextureInput implements PostPass.Input {
+    private static class MutableTextureInput implements PostPass.Input {
         private final String samplerName;
-        private final RenderTarget target;
+        private RenderTarget target;
 
-        PersistentTextureInput(String samplerName, RenderTarget target) {
+        MutableTextureInput(String samplerName, RenderTarget target) {
             this.samplerName = samplerName;
+            this.target = target;
+        }
+
+        void setTarget(RenderTarget target) {
             this.target = target;
         }
 
