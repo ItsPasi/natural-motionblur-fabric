@@ -33,18 +33,28 @@ public class RecordingShaderManager {
     private static final int SCALAR_UBO_SIZE = 16;
     private static final int CURSOR_UBO_SIZE = 32;
     private static final int MAX_HISTORY = 8;
-    private static final int WINDOW_CHANGE_HOLD_FRAMES = 6;
+    private static final int UBO_RING_SIZE = 3;
+
+    private static final String FRAME_BLEND_UBO = "FrameBlendParamsUniforms";
+
+    private static final String[] SAMPLE_NAMES = new String[MAX_HISTORY];
+    static {
+        for (int i = 0; i < MAX_HISTORY; i++) SAMPLE_NAMES[i] = "Sample" + i;
+    }
 
     private static GraphicsResourceAllocator savedAllocator = null;
 
     private static RenderTarget cleanFrameTarget = null;
     private static RenderTarget recordingTarget  = null;
     private static final RenderTarget[] recHistoryTargets = new RenderTarget[MAX_HISTORY];
+    private static final MutableTextureInput[] recHistoryInputs = new MutableTextureInput[MAX_HISTORY];
+    private static final PostPass.Input[] savedSamplerScratch = new PostPass.Input[MAX_HISTORY];
     private static int lastW = 0;
     private static int lastH = 0;
 
     private static PostChain recCombineChain = null;
-    private static GpuBuffer recCombineUBO = null;
+    private static final GpuBuffer[] recCombineUBORing = new GpuBuffer[UBO_RING_SIZE];
+    private static int recCombineUBOIndex = 0;
 
     private static PostChain recCursorChain = null;
     private static GpuBuffer recCursorUBO   = null;
@@ -57,8 +67,6 @@ public class RecordingShaderManager {
     private static int     recHistoryWriteIndex    = 0;
     private static int     recHistoryFilled        = 0;
     private static int     recLockedN              = 1;
-    private static int     recPendingN             = 1;
-    private static int     recPendingFrames        = 0;
     private static float   recSmoothedFPS          = 0;
     private static float   recPrevRawCursorX       = 0;
     private static float   recPrevRawCursorY       = 0;
@@ -104,10 +112,19 @@ public class RecordingShaderManager {
         updateLockedWindowSize(fps, refreshRate);
 
         applyCursorOverlay(main, mc, w, h);
+
+        if (recLockedN <= 1) {
+            recHistoryWriteIndex = 0;
+            recHistoryFilled = 0;
+            copyTexture(main, recordingTarget);
+            recHasFirstFrame = true;
+            return;
+        }
+
         pushHistoryFrame(main);
 
         int sampleCount = Math.min(recHistoryFilled, recLockedN);
-        if (sampleCount <= 0) {
+        if (sampleCount <= 1) {
             copyTexture(main, recordingTarget);
             recHasFirstFrame = true;
             return;
@@ -120,27 +137,44 @@ public class RecordingShaderManager {
         PostPass combinePass = firstPass(recCombineChain);
         if (combinePass == null) { copyTexture(main, recordingTarget); recHasFirstFrame = true; return; }
         Map<String, GpuBuffer> combineUniforms = ((PostPassAccessor) combinePass).getCustomUniforms();
-        if (!combineUniforms.containsKey("FrameBlendParamsUniforms")) {
+        if (!combineUniforms.containsKey(FRAME_BLEND_UBO)) {
             copyTexture(main, recordingTarget); recHasFirstFrame = true; return;
         }
-        if (recCombineUBO == null) recCombineUBO = GpuBufferUtil.createUBO("RecFrameBlendParamsUniforms", SCALAR_UBO_SIZE);
-        GpuBuffer savedCombineUBO = combineUniforms.put("FrameBlendParamsUniforms", recCombineUBO);
+
+        GpuBuffer recCombineUBO = nextRecCombineUBO();
+        GpuBuffer savedCombineUBO = combineUniforms.put(FRAME_BLEND_UBO, recCombineUBO);
         writeBlendParamsUBO(recCombineUBO, 1.0f / sampleCount, sampleCount);
 
         RenderTarget fallback = recHistoryTargets[oldestIndex];
-        PostPass.Input[] savedSamplers = new PostPass.Input[MAX_HISTORY];
-        for (int i = 0; i < MAX_HISTORY; i++) {
-            RenderTarget target = (i < sampleCount)
-                    ? recHistoryTargets[(oldestIndex + i) % MAX_HISTORY]
-                    : fallback;
-            savedSamplers[i] = swapSampler(combinePass, "Sample" + i, new PersistentTextureInput("Sample" + i, target));
-        }
+        try {
+            for (int i = 0; i < MAX_HISTORY; i++) {
+                RenderTarget target = (i < sampleCount)
+                        ? recHistoryTargets[(oldestIndex + i) % MAX_HISTORY]
+                        : fallback;
+                MutableTextureInput input = recHistoryInputs[i];
+                if (input == null) {
+                    input = new MutableTextureInput(SAMPLE_NAMES[i], target);
+                    recHistoryInputs[i] = input;
+                } else {
+                    input.setTarget(target);
+                }
+                savedSamplerScratch[i] = swapSampler(combinePass, SAMPLE_NAMES[i], input);
+            }
 
-        recCombineChain.process(main, savedAllocator);
+            recCombineChain.process(main, savedAllocator);
+        } finally {
+            if (savedCombineUBO != null) {
+                combineUniforms.put(FRAME_BLEND_UBO, savedCombineUBO);
+            } else {
+                combineUniforms.remove(FRAME_BLEND_UBO);
+            }
 
-        if (savedCombineUBO != null) combineUniforms.put("FrameBlendParamsUniforms", savedCombineUBO);
-        for (int i = 0; i < MAX_HISTORY; i++) {
-            if (savedSamplers[i] != null) swapSampler(combinePass, "Sample" + i, savedSamplers[i]);
+            for (int i = 0; i < MAX_HISTORY; i++) {
+                if (savedSamplerScratch[i] != null) {
+                    swapSampler(combinePass, SAMPLE_NAMES[i], savedSamplerScratch[i]);
+                    savedSamplerScratch[i] = null;
+                }
+            }
         }
 
         copyTexture(main, recordingTarget);
@@ -157,23 +191,7 @@ public class RecordingShaderManager {
             desired = Math.clamp(Math.round(recSmoothedFPS / refreshRate), 1, MAX_HISTORY);
         }
 
-        if (desired == recLockedN) {
-            recPendingN = desired;
-            recPendingFrames = 0;
-            return;
-        }
-
-        if (desired != recPendingN) {
-            recPendingN = desired;
-            recPendingFrames = 1;
-            return;
-        }
-
-        recPendingFrames++;
-        if (recPendingFrames >= WINDOW_CHANGE_HOLD_FRAMES) {
-            recLockedN = recPendingN;
-            recPendingFrames = 0;
-        }
+        recLockedN = desired;
     }
 
     private static void pushHistoryFrame(RenderTarget src) {
@@ -320,18 +338,17 @@ public class RecordingShaderManager {
                 recHistoryTargets[i].destroyBuffers();
                 recHistoryTargets[i] = null;
             }
+            recHistoryInputs[i] = null;
+            savedSamplerScratch[i] = null;
         }
+        closeRecCombineUBORing();
         recCombineChain = null;
         recCursorChain = null;
-        recCombineUBO = null;
-        recCursorUBO = null;
         recCursorTextureInput = null;
         recHasFirstFrame = false;
         recHistoryWriteIndex = 0;
         recHistoryFilled = 0;
         recLockedN = 1;
-        recPendingN = 1;
-        recPendingFrames = 0;
         recSmoothedFPS = 0.0f;
         recPrevRawCursorVisible = false;
     }
@@ -383,6 +400,26 @@ public class RecordingShaderManager {
         return null;
     }
 
+    private static GpuBuffer nextRecCombineUBO() {
+        GpuBuffer ubo = recCombineUBORing[recCombineUBOIndex];
+        if (ubo == null) {
+            ubo = GpuBufferUtil.createUBO("RecFrameBlendParamsUniforms", SCALAR_UBO_SIZE);
+            recCombineUBORing[recCombineUBOIndex] = ubo;
+        }
+        recCombineUBOIndex = (recCombineUBOIndex + 1) % UBO_RING_SIZE;
+        return ubo;
+    }
+
+    private static void closeRecCombineUBORing() {
+        for (int i = 0; i < recCombineUBORing.length; i++) {
+            if (recCombineUBORing[i] != null) {
+                recCombineUBORing[i].close();
+                recCombineUBORing[i] = null;
+            }
+        }
+        recCombineUBOIndex = 0;
+    }
+
     private static PostChain loadChain(Minecraft mc, PostChain cached, String shaderPath) {
         try {
             net.minecraft.client.renderer.ShaderManager.CompilationCache cache =
@@ -393,7 +430,7 @@ public class RecordingShaderManager {
                     LevelTargetBundle.MAIN_TARGETS);
             if (result != cached) {
                 switch (shaderPath) {
-                    case "frame_blending" -> recCombineUBO = null;
+                    case "frame_blending" -> closeRecCombineUBORing();
                     case "cursor_overlay" -> recCursorUBO = null;
                 }
             }
@@ -420,12 +457,16 @@ public class RecordingShaderManager {
         }
     }
 
-    private static class PersistentTextureInput implements PostPass.Input {
+    private static class MutableTextureInput implements PostPass.Input {
         private final String samplerName;
-        private final RenderTarget target;
+        private RenderTarget target;
 
-        PersistentTextureInput(String samplerName, RenderTarget target) {
+        MutableTextureInput(String samplerName, RenderTarget target) {
             this.samplerName = samplerName;
+            this.target = target;
+        }
+
+        void setTarget(RenderTarget target) {
             this.target = target;
         }
 
