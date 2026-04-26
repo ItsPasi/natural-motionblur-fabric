@@ -1,5 +1,5 @@
 <p align="center">
-    <img src="https://github.com/ItsPasi/natural-motionblur-fabric/blob/1.20.6-fabric/docs/blur%20icon%20320px.png" />
+    <img src="https://github.com/ItsPasi/natural-motionblur-fabric/blob/1.20.6/docs/blur%20icon%20320px.png" />
     
 # Natural Motion Blur
 
@@ -9,7 +9,7 @@ It is recommended to use the default strength value (1).
 
 The config GUI can be accessed via these commands: ```/motionblur``` ```/mb```
 
-![thumbnail](https://github.com/ItsPasi/natural-motionblur-fabric/blob/1.20.6-fabric/docs/blur%20thumbnail.png?raw=true)
+![thumbnail](https://github.com/ItsPasi/natural-motionblur-fabric/blob/1.20.6/docs/blur%20thumbnail.png?raw=true)
 
 ## Feature List
 - Blur Toggle - Including adjustable Keybind (B)
@@ -36,7 +36,7 @@ Instructions can also be viewed in the in-game GUI.
 
 ## Motionblur Example
 
-![example1](https://github.com/ItsPasi/natural-motionblur-fabric/raw/1.20.6-fabric/docs/blur%20example.png)
+![example1](https://github.com/ItsPasi/natural-motionblur-fabric/raw/1.20.6/docs/blur%20example.png)
 
 [![Video Example](https://img.youtube.com/vi/Dxp989uGeBQ/maxresdefault.jpg)](https://www.youtube.com/watch?v=Dxp989uGeBQ "Motion Blur Example")
 _This mod was made with the help of IMS, What42Pizza and Romain H._
