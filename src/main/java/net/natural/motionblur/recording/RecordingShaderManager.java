@@ -82,12 +82,19 @@ public class RecordingShaderManager {
     public static void captureFinalFrameAndPresent() {
         ConfigEntries cfg = ConfigManager.getConfig();
         try {
-            if (!cfg.recordingOverlayEnabled || savedAllocator == null) return;
+            if (!cfg.recordingOverlayEnabled) return;
 
             Minecraft mc = Minecraft.getInstance();
             RenderTarget main = mc.getMainRenderTarget();
             int w = main.width;
             int h = main.height;
+            if (w <= 0 || h <= 0) return;
+
+            if (savedAllocator == null) {
+                captureMenuFrameAndPresent(mc, main, w, h);
+                return;
+            }
+
             ensureTargets(w, h);
 
             if (lastSeenBlurAlgorithm != cfg.blurAlgorithm) {
@@ -104,15 +111,36 @@ public class RecordingShaderManager {
             applyIsolatedFrameBlending(main, realFps, targetHz);
 
             if (recHasFirstFrame) {
-                int glTexId = (main.getColorTexture() != null) ? GpuTextureHelper.getGlId(main.getColorTexture()) : 0;
-                if (glTexId != 0) {
-                    SpoutBridge.sendTexture(glTexId, w, h);
-                }
+                sendMainTextureToSpout(main, w, h);
             }
 
             copyFramebuffer(cleanFrameTarget, main);
         } finally {
             savedAllocator = null;
+        }
+    }
+
+    private static void captureMenuFrameAndPresent(Minecraft mc, RenderTarget main, int w, int h) {
+        GraphicsResourceAllocator previousAllocator = savedAllocator;
+
+        try {
+            ensureTargets(w, h);
+            copyFramebuffer(main, cleanFrameTarget);
+
+            savedAllocator = GraphicsResourceAllocator.UNPOOLED;
+            applyCursorOverlay(main, mc, w, h);
+
+            sendMainTextureToSpout(main, w, h);
+            copyFramebuffer(cleanFrameTarget, main);
+        } finally {
+            savedAllocator = previousAllocator;
+        }
+    }
+
+    private static void sendMainTextureToSpout(RenderTarget main, int w, int h) {
+        int glTexId = (main.getColorTexture() != null) ? GpuTextureHelper.getGlId(main.getColorTexture()) : 0;
+        if (glTexId != 0) {
+            SpoutBridge.sendTexture(glTexId, w, h);
         }
     }
 
@@ -458,6 +486,7 @@ public class RecordingShaderManager {
         recHistoryFilled = 0;
         recLockedN = 1;
         recSmoothedFPS = 0.0f;
+        recPrevRawCursorVisible = false;
     }
 
     public static void destroy() {
