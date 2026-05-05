@@ -7,9 +7,7 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
-// MC26.1 official mappings:
-// Capture after the main framebuffer is blitted to the screen,
-// immediately before Minecraft flips/presents the frame.
+// Capture the final client framebuffer immediately before Minecraft swaps buffers.
 @Mixin(Minecraft.class)
 public class MixinMinecraft {
 
