@@ -22,9 +22,12 @@ import net.natural.motionblur.mixin.ShaderManagerAccessor;
 import net.natural.motionblur.util.GpuBufferUtil;
 import org.jspecify.annotations.NonNull;
 import org.jspecify.annotations.Nullable;
-
 import org.lwjgl.glfw.GLFW;
+import org.lwjgl.opengl.GL11;
+import org.lwjgl.opengl.GL12;
+import org.lwjgl.opengl.GL30;
 
+import java.nio.ByteBuffer;
 import java.lang.reflect.Field;
 import java.util.List;
 import java.util.Map;
@@ -54,6 +57,10 @@ public class RecordingShaderManager {
     private static int lastW = 0;
     private static int lastH = 0;
 
+    private static int rawSpoutTexture = 0;
+    private static int rawSpoutW = 0;
+    private static int rawSpoutH = 0;
+
     private static PostChain recCombineChain = null;
     private static final GpuBuffer[] recCombineUBORing = new GpuBuffer[UBO_RING_SIZE];
     private static int recCombineUBOIndex = 0;
@@ -64,8 +71,6 @@ public class RecordingShaderManager {
     private static final ResourceLocation CURSOR_TEXTURE_ID =
             ResourceLocation.fromNamespaceAndPath(NaturalMotionBlurMod.ID, "textures/gui/obs_cursor.png");
     private static PostPass.Input recCursorTextureInput = null;
-
-    private static boolean recHasFirstFrame        = false;
     private static int     recHistoryWriteIndex    = 0;
     private static int     recHistoryFilled        = 0;
     private static int     recLockedN              = 1;
@@ -74,8 +79,6 @@ public class RecordingShaderManager {
     private static float   recPrevRawCursorY       = 0;
     private static boolean recPrevRawCursorVisible = false;
 
-
-    // Cached GLFW window handle (resolved once via reflection)
     private static long    cachedGlfwHandle        = 0;
     private static boolean glfwHandleResolved      = false;
 
@@ -85,13 +88,30 @@ public class RecordingShaderManager {
 
     public static void captureFinalFrameAndPresent() {
         ConfigEntries cfg = ConfigManager.getConfig();
-        try {
-            if (!cfg.recordingOverlayEnabled || savedAllocator == null) return;
+        if (!cfg.recordingOverlayEnabled) {
+            savedAllocator = null;
+            return;
+        }
 
-            Minecraft mc = Minecraft.getInstance();
-            RenderTarget main = mc.getMainRenderTarget();
-            int w = main.width;
-            int h = main.height;
+        Minecraft mc = Minecraft.getInstance();
+        RenderTarget main = mc.getMainRenderTarget();
+        int w = main.width;
+        int h = main.height;
+        if (w <= 0 || h <= 0) {
+            savedAllocator = null;
+            return;
+        }
+
+        if (savedAllocator == null) {
+            try {
+                captureMenuFrameAndPresent(mc, main, w, h);
+            } finally {
+                savedAllocator = null;
+            }
+            return;
+        }
+
+        try {
             ensureTargets(w, h);
 
             float realFps = ShaderManager.getCurrentFPS();
@@ -100,15 +120,109 @@ public class RecordingShaderManager {
             copyTexture(main, cleanFrameTarget);
             applyIsolatedFrameBlending(main, realFps, targetHz, w, h);
 
-            if (recHasFirstFrame) {
-                int glTexId = GpuTextureHelper.getGlId(main.getColorTexture());
-                if (glTexId != 0) SpoutBridge.sendTexture(glTexId, w, h);
-            }
+            blitMainToScreenAndSendSpout(main, w, h);
 
             copyTexture(cleanFrameTarget, main);
+            main.blitToScreen();
         } finally {
             savedAllocator = null;
         }
+    }
+
+    private static void captureMenuFrameAndPresent(Minecraft mc, RenderTarget main, int w, int h) {
+        GraphicsResourceAllocator previousAllocator = savedAllocator;
+
+        try {
+            ensureTargets(w, h);
+            copyTexture(main, cleanFrameTarget);
+
+            savedAllocator = GraphicsResourceAllocator.UNPOOLED;
+            applyCursorOverlay(main, mc, w, h);
+
+            blitMainToScreenAndSendSpout(main, w, h);
+
+            copyTexture(cleanFrameTarget, main);
+            main.blitToScreen();
+        } finally {
+            savedAllocator = previousAllocator;
+        }
+    }
+
+    private static void blitMainToScreenAndSendSpout(RenderTarget main, int w, int h) {
+        main.blitToScreen();
+        sendCurrentFramebufferToSpout(w, h);
+    }
+
+    private static void sendCurrentFramebufferToSpout(int w, int h) {
+        if (w <= 0 || h <= 0) return;
+
+        RenderSystem.assertOnRenderThread();
+
+        ensureRawSpoutTexture(w, h);
+        if (rawSpoutTexture == 0) return;
+
+        int oldTexture = GL11.glGetInteger(GL11.GL_TEXTURE_BINDING_2D);
+        int oldReadFbo = GL11.glGetInteger(GL30.GL_READ_FRAMEBUFFER_BINDING);
+        int oldDrawFbo = GL11.glGetInteger(GL30.GL_DRAW_FRAMEBUFFER_BINDING);
+
+        int[] oldViewport = new int[4];
+        GL11.glGetIntegerv(GL11.GL_VIEWPORT, oldViewport);
+
+        try {
+            GL11.glBindTexture(GL11.GL_TEXTURE_2D, rawSpoutTexture);
+            GL11.glCopyTexSubImage2D(GL11.GL_TEXTURE_2D, 0, 0, 0, 0, 0, w, h);
+            GL11.glFlush();
+            SpoutBridge.sendTexture(rawSpoutTexture, w, h);
+        } finally {
+            GL30.glBindFramebuffer(GL30.GL_READ_FRAMEBUFFER, oldReadFbo);
+            GL30.glBindFramebuffer(GL30.GL_DRAW_FRAMEBUFFER, oldDrawFbo);
+            GL11.glBindTexture(GL11.GL_TEXTURE_2D, oldTexture);
+            GL11.glViewport(oldViewport[0], oldViewport[1], oldViewport[2], oldViewport[3]);
+        }
+    }
+
+    private static void ensureRawSpoutTexture(int w, int h) {
+        if (rawSpoutTexture != 0 && rawSpoutW == w && rawSpoutH == h) {
+            return;
+        }
+
+        destroyRawSpoutTexture();
+
+        rawSpoutW = w;
+        rawSpoutH = h;
+
+        int oldTexture = GL11.glGetInteger(GL11.GL_TEXTURE_BINDING_2D);
+
+        rawSpoutTexture = GL11.glGenTextures();
+        GL11.glBindTexture(GL11.GL_TEXTURE_2D, rawSpoutTexture);
+
+        GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MIN_FILTER, GL11.GL_LINEAR);
+        GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MAG_FILTER, GL11.GL_LINEAR);
+        GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_WRAP_S, GL12.GL_CLAMP_TO_EDGE);
+        GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_WRAP_T, GL12.GL_CLAMP_TO_EDGE);
+
+        GL11.glTexImage2D(
+                GL11.GL_TEXTURE_2D,
+                0,
+                GL11.GL_RGBA8,
+                w,
+                h,
+                0,
+                GL11.GL_RGBA,
+                GL11.GL_UNSIGNED_BYTE,
+                (ByteBuffer) null
+        );
+
+        GL11.glBindTexture(GL11.GL_TEXTURE_2D, oldTexture);
+    }
+
+    private static void destroyRawSpoutTexture() {
+        if (rawSpoutTexture != 0) {
+            GL11.glDeleteTextures(rawSpoutTexture);
+            rawSpoutTexture = 0;
+        }
+        rawSpoutW = 0;
+        rawSpoutH = 0;
     }
 
     private static void applyIsolatedFrameBlending(RenderTarget main, float fps,
@@ -118,12 +232,9 @@ public class RecordingShaderManager {
 
         applyCursorOverlay(main, mc, w, h);
 
-        // With one sample, the frame-blending pass should be visually equivalent to the current frame.
-        // Skip history copying and the combine pass to avoid extra GPU work and per-frame churn.
         if (recLockedN <= 1) {
             recHistoryWriteIndex = 0;
             recHistoryFilled = 0;
-            recHasFirstFrame = true;
             return;
         }
 
@@ -131,19 +242,18 @@ public class RecordingShaderManager {
 
         int sampleCount = Math.min(recHistoryFilled, recLockedN);
         if (sampleCount <= 1) {
-            recHasFirstFrame = true;
             return;
         }
 
         int oldestIndex = oldestHistoryIndex(sampleCount);
 
         recCombineChain = loadChain(mc, recCombineChain, "frame_blending");
-        if (recCombineChain == null) { recHasFirstFrame = true; return; }
+        if (recCombineChain == null) return;
         PostPass combinePass = firstPass(recCombineChain);
-        if (combinePass == null) { recHasFirstFrame = true; return; }
+        if (combinePass == null) return;
         Map<String, GpuBuffer> combineUniforms = ((PostPassAccessor) combinePass).getCustomUniforms();
         if (!combineUniforms.containsKey(FRAME_BLEND_UBO)) {
-            recHasFirstFrame = true; return;
+            return;
         }
 
         GpuBuffer recCombineUBO = nextRecCombineUBO();
@@ -168,7 +278,12 @@ public class RecordingShaderManager {
 
             recCombineChain.process(main, savedAllocator);
         } finally {
-            if (savedCombineUBO != null) combineUniforms.put(FRAME_BLEND_UBO, savedCombineUBO);
+            if (savedCombineUBO != null) {
+                combineUniforms.put(FRAME_BLEND_UBO, savedCombineUBO);
+            } else {
+                combineUniforms.remove(FRAME_BLEND_UBO);
+            }
+
             for (int i = 0; i < MAX_HISTORY; i++) {
                 if (savedSamplerScratch[i] != null) {
                     swapSampler(combinePass, SAMPLE_NAMES[i], savedSamplerScratch[i]);
@@ -176,9 +291,7 @@ public class RecordingShaderManager {
                 }
             }
         }
-
-        recHasFirstFrame = true;
-    }
+}
 
     private static void updateLockedWindowSize(float fps, int refreshRate) {
         if (fps > 0.0f) {
@@ -221,18 +334,12 @@ public class RecordingShaderManager {
         }
 
         recCursorChain = loadChain(mc, recCursorChain, "cursor_overlay");
-        if (recCursorChain == null) {
-            return;
-        }
+        if (recCursorChain == null) return;
         PostPass cursorPass = firstPass(recCursorChain);
-        if (cursorPass == null) {
-            return;
-        }
+        if (cursorPass == null) return;
 
         Map<String, GpuBuffer> cursorUniforms = ((PostPassAccessor) cursorPass).getCustomUniforms();
-        if (!cursorUniforms.containsKey(CURSOR_UBO)) {
-            return;
-        }
+        if (!cursorUniforms.containsKey(CURSOR_UBO)) return;
 
         if (recCursorUBO == null) recCursorUBO = GpuBufferUtil.createUBO(CURSOR_UBO, CURSOR_UBO_SIZE);
         GpuBuffer savedCursorUBO = cursorUniforms.put(CURSOR_UBO, recCursorUBO);
@@ -250,16 +357,13 @@ public class RecordingShaderManager {
 
         PostPass.Input savedCursorSampler = swapSampler(cursorPass, "Cursor", recCursorTextureInput);
 
-        try {
-            recCursorChain.process(target, savedAllocator);
+        recCursorChain.process(target, savedAllocator);
+        recPrevRawCursorX = cursor.x;
+        recPrevRawCursorY = cursor.y;
+        recPrevRawCursorVisible = true;
 
-            recPrevRawCursorX = cursor.x;
-            recPrevRawCursorY = cursor.y;
-            recPrevRawCursorVisible = true;
-        } finally {
-            if (savedCursorUBO != null) cursorUniforms.put(CURSOR_UBO, savedCursorUBO);
-            if (savedCursorSampler != null) swapSampler(cursorPass, "Cursor", savedCursorSampler);
-        }
+        if (savedCursorUBO != null) cursorUniforms.put(CURSOR_UBO, savedCursorUBO);
+        if (savedCursorSampler != null) swapSampler(cursorPass, "Cursor", savedCursorSampler);
     }
 
     private static void writeCursorUBO(GpuBuffer ubo,
@@ -297,13 +401,13 @@ public class RecordingShaderManager {
             double winH = mc.getWindow().getHeight();
             if (winW <= 0 || winH <= 0) return CursorState.HIDDEN;
 
-            float x = (float)(xArr[0] * renderWidth  / winW);
-            float y = (float)(yArr[0] * renderHeight / winH);
+            float x = (float) (xArr[0] * renderWidth / winW);
+            float y = (float) (yArr[0] * renderHeight / winH);
             if (x < -32 || y < -32 || x > renderWidth + 32 || y > renderHeight + 32)
                 return CursorState.HIDDEN;
 
             return new CursorState(x, y, 1.0f, true);
-        } catch (Throwable e) {
+        } catch (Throwable ignored) {
             return CursorState.HIDDEN;
         }
     }
@@ -337,7 +441,7 @@ public class RecordingShaderManager {
             }
         } catch (Throwable ignored) {
         }
-        glfwHandleResolved = true; // Don't retry every frame
+        glfwHandleResolved = true;
         return 0;
     }
 
@@ -354,20 +458,10 @@ public class RecordingShaderManager {
             recHistoryInputs[i] = null;
             savedSamplerScratch[i] = null;
         }
-        for (int i = 0; i < recCombineUBORing.length; i++) {
-            if (recCombineUBORing[i] != null) {
-                recCombineUBORing[i].close();
-                recCombineUBORing[i] = null;
-            }
-        }
-        if (recCursorUBO != null) {
-            recCursorUBO.close();
-            recCursorUBO = null;
-        }
+        closeRecCombineUBORing();
         recCombineChain = null;
         recCursorChain = null;
         recCursorTextureInput = null;
-        recHasFirstFrame = false;
         recHistoryWriteIndex = 0;
         recHistoryFilled = 0;
         recLockedN = 1;
@@ -377,6 +471,9 @@ public class RecordingShaderManager {
     }
 
     public static void destroy() {
+        if (RenderSystem.isOnRenderThread()) {
+            destroyRawSpoutTexture();
+        }
         if (cleanFrameTarget != null) { cleanFrameTarget.destroyBuffers(); cleanFrameTarget = null; }
         savedAllocator = null;
         invalidateFrameBlending();
@@ -430,29 +527,14 @@ public class RecordingShaderManager {
         return ubo;
     }
 
-    private static void loadChainResourcesChanged(String shaderPath) {
-        switch (shaderPath) {
-            case "frame_blending" -> {
-                for (int i = 0; i < recCombineUBORing.length; i++) {
-                    if (recCombineUBORing[i] != null) {
-                        recCombineUBORing[i].close();
-                        recCombineUBORing[i] = null;
-                    }
-                }
-                recCombineUBOIndex = 0;
-                for (int i = 0; i < recHistoryInputs.length; i++) {
-                    recHistoryInputs[i] = null;
-                    savedSamplerScratch[i] = null;
-                }
-            }
-            case "cursor_overlay" -> {
-                if (recCursorUBO != null) {
-                    recCursorUBO.close();
-                    recCursorUBO = null;
-                }
-                recCursorTextureInput = null;
+    private static void closeRecCombineUBORing() {
+        for (int i = 0; i < recCombineUBORing.length; i++) {
+            if (recCombineUBORing[i] != null) {
+                recCombineUBORing[i].close();
+                recCombineUBORing[i] = null;
             }
         }
+        recCombineUBOIndex = 0;
     }
 
     private static PostChain loadChain(Minecraft mc, PostChain cached, String shaderPath) {
@@ -464,10 +546,14 @@ public class RecordingShaderManager {
                     ResourceLocation.fromNamespaceAndPath(NaturalMotionBlurMod.ID, shaderPath),
                     LevelTargetBundle.MAIN_TARGETS);
             if (result != cached) {
-                loadChainResourcesChanged(shaderPath);
+                switch (shaderPath) {
+                    case "frame_blending" -> closeRecCombineUBORing();
+                    case "cursor_overlay" -> recCursorUBO = null;
+                }
             }
             return result;
         } catch (Exception e) {
+            System.err.println("[NaturalMotionBlur] Failed to load recording chain " + shaderPath + ": " + e.getMessage());
             return null;
         }
     }
