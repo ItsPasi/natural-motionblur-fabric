@@ -23,7 +23,11 @@ import net.natural.motionblur.util.GpuBufferUtil;
 import org.jspecify.annotations.NonNull;
 import org.jspecify.annotations.Nullable;
 import org.lwjgl.glfw.GLFW;
+import org.lwjgl.opengl.GL11;
+import org.lwjgl.opengl.GL12;
+import org.lwjgl.opengl.GL30;
 
+import java.nio.ByteBuffer;
 import java.lang.reflect.Field;
 import java.util.List;
 import java.util.Map;
@@ -51,6 +55,11 @@ public class RecordingShaderManager {
     private static final PostPass.Input[] savedSamplerScratch = new PostPass.Input[MAX_HISTORY];
     private static int lastW = 0;
     private static int lastH = 0;
+
+    // Spout-compatible output texture.
+    private static int rawSpoutTexture = 0;
+    private static int rawSpoutW = 0;
+    private static int rawSpoutH = 0;
 
     private static PostChain recCombineChain = null;
     private static final GpuBuffer[] recCombineUBORing = new GpuBuffer[UBO_RING_SIZE];
@@ -81,13 +90,20 @@ public class RecordingShaderManager {
 
     public static void captureFinalFrameAndPresent() {
         ConfigEntries cfg = ConfigManager.getConfig();
-        try {
-            if (!cfg.recordingOverlayEnabled || savedAllocator == null) return;
+        if (!cfg.recordingOverlayEnabled) return;
 
-            Minecraft mc = Minecraft.getInstance();
-            RenderTarget main = mc.getMainRenderTarget();
-            int w = main.width;
-            int h = main.height;
+        Minecraft mc = Minecraft.getInstance();
+        RenderTarget main = mc.getMainRenderTarget();
+        int w = main.width;
+        int h = main.height;
+        if (w <= 0 || h <= 0) return;
+
+        if (savedAllocator == null) {
+            captureMenuFrameAndPresent(mc, main, w, h);
+            return;
+        }
+
+        try {
             ensureTargets(w, h);
 
             float realFps = ShaderManager.getCurrentFPS();
@@ -97,13 +113,108 @@ public class RecordingShaderManager {
             applyIsolatedFrameBlending(main, realFps, targetHz, w, h);
 
             if (recHasFirstFrame) {
-                int glTexId = GpuTextureHelper.getGlId(recordingTarget.getColorTexture());
-                if (glTexId != 0) SpoutBridge.sendTexture(glTexId, w, h);
+                copyTexture(recordingTarget, main);
+                sendCurrentFramebufferToSpout(w, h);
+            } else {
+                sendCurrentFramebufferToSpout(w, h);
             }
+
             copyTexture(cleanFrameTarget, main);
         } finally {
             savedAllocator = null;
         }
+    }
+
+    private static void captureMenuFrameAndPresent(Minecraft mc, RenderTarget main, int w, int h) {
+        GraphicsResourceAllocator previousAllocator = savedAllocator;
+
+        try {
+            ensureTargets(w, h);
+            copyTexture(main, cleanFrameTarget);
+
+            savedAllocator = GraphicsResourceAllocator.UNPOOLED;
+            applyCursorOverlay(main, mc, w, h);
+
+            sendCurrentFramebufferToSpout(w, h);
+            copyTexture(cleanFrameTarget, main);
+        } finally {
+            savedAllocator = previousAllocator;
+        }
+    }
+
+    private static void sendCurrentFramebufferToSpout(int w, int h) {
+        if (w <= 0 || h <= 0) return;
+
+        RenderSystem.assertOnRenderThread();
+
+        ensureRawSpoutTexture(w, h);
+        if (rawSpoutTexture == 0) return;
+
+        int oldTexture = GL11.glGetInteger(GL11.GL_TEXTURE_BINDING_2D);
+        int oldReadFbo = GL11.glGetInteger(GL30.GL_READ_FRAMEBUFFER_BINDING);
+        int oldDrawFbo = GL11.glGetInteger(GL30.GL_DRAW_FRAMEBUFFER_BINDING);
+
+        int[] oldViewport = new int[4];
+        GL11.glGetIntegerv(GL11.GL_VIEWPORT, oldViewport);
+
+        try {
+            GL11.glBindTexture(GL11.GL_TEXTURE_2D, rawSpoutTexture);
+            GL11.glCopyTexSubImage2D(GL11.GL_TEXTURE_2D, 0, 0, 0, 0, 0, w, h);
+            GL11.glFlush();
+            SpoutBridge.sendTexture(rawSpoutTexture, w, h);
+        } finally {
+            GL30.glBindFramebuffer(GL30.GL_READ_FRAMEBUFFER, oldReadFbo);
+            GL30.glBindFramebuffer(GL30.GL_DRAW_FRAMEBUFFER, oldDrawFbo);
+            GL11.glBindTexture(GL11.GL_TEXTURE_2D, oldTexture);
+            GL11.glViewport(oldViewport[0], oldViewport[1], oldViewport[2], oldViewport[3]);
+        }
+    }
+
+    private static void ensureRawSpoutTexture(int w, int h) {
+        if (rawSpoutTexture != 0 && rawSpoutW == w && rawSpoutH == h) {
+            return;
+        }
+
+        destroyRawSpoutTexture();
+
+        rawSpoutW = w;
+        rawSpoutH = h;
+
+        int oldTexture = GL11.glGetInteger(GL11.GL_TEXTURE_BINDING_2D);
+
+        rawSpoutTexture = GL11.glGenTextures();
+        GL11.glBindTexture(GL11.GL_TEXTURE_2D, rawSpoutTexture);
+
+        GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MIN_FILTER, GL11.GL_LINEAR);
+        GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MAG_FILTER, GL11.GL_LINEAR);
+        GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_WRAP_S, GL12.GL_CLAMP_TO_EDGE);
+        GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_WRAP_T, GL12.GL_CLAMP_TO_EDGE);
+
+        GL11.glTexImage2D(
+                GL11.GL_TEXTURE_2D,
+                0,
+                GL11.GL_RGBA8,
+                w,
+                h,
+                0,
+                GL11.GL_RGBA,
+                GL11.GL_UNSIGNED_BYTE,
+                (ByteBuffer) null
+        );
+
+        System.out.println("[NMB SPOUT] Raw sender texture ready: "
+                + rawSpoutTexture + " (" + w + "x" + h + ")");
+
+        GL11.glBindTexture(GL11.GL_TEXTURE_2D, oldTexture);
+    }
+
+    private static void destroyRawSpoutTexture() {
+        if (rawSpoutTexture != 0) {
+            GL11.glDeleteTextures(rawSpoutTexture);
+            rawSpoutTexture = 0;
+        }
+        rawSpoutW = 0;
+        rawSpoutH = 0;
     }
 
     private static void applyIsolatedFrameBlending(RenderTarget main, float fps,
@@ -354,6 +465,9 @@ public class RecordingShaderManager {
     }
 
     public static void destroy() {
+        if (RenderSystem.isOnRenderThread()) {
+            destroyRawSpoutTexture();
+        }
         if (cleanFrameTarget != null) { cleanFrameTarget.destroyBuffers(); cleanFrameTarget = null; }
         if (recordingTarget != null) { recordingTarget.destroyBuffers(); recordingTarget = null; }
         savedAllocator = null;
