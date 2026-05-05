@@ -23,7 +23,6 @@ import net.natural.motionblur.util.GpuBufferUtil;
 import org.jspecify.annotations.NonNull;
 import org.jspecify.annotations.Nullable;
 import org.lwjgl.glfw.GLFW;
-
 import java.lang.reflect.Field;
 import java.util.List;
 import java.util.Map;
@@ -81,13 +80,26 @@ public class RecordingShaderManager {
 
     public static void captureFinalFrameAndPresent() {
         ConfigEntries cfg = ConfigManager.getConfig();
-        try {
-            if (!cfg.recordingOverlayEnabled || savedAllocator == null) return;
+        if (!cfg.recordingOverlayEnabled) {
+            savedAllocator = null;
+            return;
+        }
 
-            Minecraft mc = Minecraft.getInstance();
-            RenderTarget main = mc.getMainRenderTarget();
-            int w = main.width;
-            int h = main.height;
+        Minecraft mc = Minecraft.getInstance();
+        RenderTarget main = mc.getMainRenderTarget();
+        int w = main.width;
+        int h = main.height;
+        if (w <= 0 || h <= 0) {
+            savedAllocator = null;
+            return;
+        }
+
+        if (savedAllocator == null) {
+            captureMenuFrameAndPresent(mc, main, w, h);
+            return;
+        }
+
+        try {
             ensureTargets(w, h);
 
             float realFps = ShaderManager.getCurrentFPS();
@@ -100,9 +112,29 @@ public class RecordingShaderManager {
                 int glTexId = GpuTextureHelper.getGlId(recordingTarget.getColorTexture());
                 if (glTexId != 0) SpoutBridge.sendTexture(glTexId, w, h);
             }
+
             copyTexture(cleanFrameTarget, main);
         } finally {
             savedAllocator = null;
+        }
+    }
+
+    private static void captureMenuFrameAndPresent(Minecraft mc, RenderTarget main, int w, int h) {
+        GraphicsResourceAllocator previousAllocator = savedAllocator;
+
+        try {
+            ensureTargets(w, h);
+            copyTexture(main, cleanFrameTarget);
+
+            savedAllocator = GraphicsResourceAllocator.UNPOOLED;
+            applyCursorOverlay(main, mc, w, h);
+
+            int glTexId = GpuTextureHelper.getGlId(main.getColorTexture());
+            if (glTexId != 0) SpoutBridge.sendTexture(glTexId, w, h);
+
+            copyTexture(cleanFrameTarget, main);
+        } finally {
+            savedAllocator = previousAllocator;
         }
     }
 
@@ -475,7 +507,7 @@ public class RecordingShaderManager {
                               @NonNull Map<Identifier, com.mojang.blaze3d.resource.ResourceHandle<RenderTarget>> targets) {}
 
         @Override
-        public com.mojang.blaze3d.textures.@NonNull GpuTextureView texture(
+        public @NonNull GpuTextureView texture(
                 @NonNull Map<Identifier, com.mojang.blaze3d.resource.ResourceHandle<RenderTarget>> targets) {
             assert target.getColorTextureView() != null;
             return target.getColorTextureView();
