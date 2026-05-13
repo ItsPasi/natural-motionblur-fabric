@@ -26,4 +26,18 @@ public final class GpuBufferUtil {
             throw new RuntimeException("[NMB] GpuBufferUtil.createUBO failed", e);
         }
     }
+
+    public static void closeQuietly(GpuBuffer buffer) {
+        if (buffer == null) return;
+        try {
+            buffer.close();
+        } catch (RuntimeException ignored) {
+        }
+    }
+
+    public static boolean isClosedBufferException(RuntimeException e) {
+        String message = e.getMessage();
+        return message != null && message.toLowerCase().contains("closed");
+    }
+
 }

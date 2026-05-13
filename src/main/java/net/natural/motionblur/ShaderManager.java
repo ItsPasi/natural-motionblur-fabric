@@ -18,7 +18,7 @@ import net.natural.motionblur.shader.BlurStrengthCalculator;
 import net.natural.motionblur.shader.CameraState;
 import net.natural.motionblur.shader.FrameBlendingManager;
 import net.natural.motionblur.shader.FrameTimer;
-import net.natural.motionblur.util.GpuBufferUtil;
+import net.natural.motionblur.util.ManagedUniformBuffer;
 import org.joml.Matrix4f;
 
 import java.util.HashSet;
@@ -40,8 +40,9 @@ public class ShaderManager {
     private static final Set<String> loadErrorLogged = new HashSet<>();
 
     private static final int UBO_SIZE = 304;
-    private static GpuBuffer preEntityUBO  = null;
-    private static GpuBuffer postRenderUBO = null;
+    private static final ManagedUniformBuffer preEntityUBO  = new ManagedUniformBuffer("PreEntityBlurUniforms",  UBO_SIZE);
+    private static final ManagedUniformBuffer f5EntityUBO   = new ManagedUniformBuffer("PreEntityBlurUniforms",  UBO_SIZE);
+    private static final ManagedUniformBuffer postRenderUBO = new ManagedUniformBuffer("PostRenderBlurUniforms", UBO_SIZE);
 
     private enum BlurPass { NORMAL_PRE, SPECIAL_F5, NORMAL_POST }
 
@@ -49,7 +50,12 @@ public class ShaderManager {
     public static void clearFrameAllocator() { frameAllocator = null; }
     public static void beginFrame() { frameTimer.beginFrame(); }
     public static float getCurrentFPS() { return frameTimer.getFPS(); }
-    public static void invalidate() { FrameBlendingManager.invalidate(); }
+    public static void invalidate() {
+        preEntityUBO.reset();
+        f5EntityUBO.reset();
+        postRenderUBO.reset();
+        FrameBlendingManager.invalidate();
+    }
 
     public static void setFrameMotionBlur(Matrix4f modelView, Matrix4f prevModelView,
                                           Matrix4f projection, Matrix4f prevProjection,
@@ -106,19 +112,19 @@ public class ShaderManager {
             case NORMAL_PRE -> {
                 PostChain p = getPreProcessor(client);
                 if (p != null) {
-                    writeAndRun(p, "PreEntityBlurUniforms", true, blur.strength(), viewW, viewH, algo, blur.sampleAmount(), client);
+                    writeAndRun(p, "PreEntityBlurUniforms", preEntityUBO, blur.strength(), viewW, viewH, algo, blur.sampleAmount(), client);
                 }
             }
             case SPECIAL_F5 -> {
                 PostChain p = getF5Processor(client);
                 if (p != null) {
-                    writeAndRun(p, "PreEntityBlurUniforms", true, blur.strength(), viewW, viewH, algo, blur.sampleAmount(), client);
+                    writeAndRun(p, "PreEntityBlurUniforms", f5EntityUBO, blur.strength(), viewW, viewH, algo, blur.sampleAmount(), client);
                 }
             }
             case NORMAL_POST -> {
                 PostChain p = getPostProcessor(client);
                 if (p != null) {
-                    writeAndRun(p, "PostRenderBlurUniforms", false, blur.strength(), viewW, viewH, algo, blur.sampleAmount(), client);
+                    writeAndRun(p, "PostRenderBlurUniforms", postRenderUBO, blur.strength(), viewW, viewH, algo, blur.sampleAmount(), client);
                 }
                 if (config.blurAlgorithm == ConfigEntries.BlurAlgorithm.HYBRID_BLENDING) {
                     applyFrameBlendingInternal();
@@ -138,21 +144,21 @@ public class ShaderManager {
     private static PostChain getPreProcessor(Minecraft client) {
         PostChain result = loadProcessor(client, "velocity_pre", "pre-entity");
         if (result == null) { cachedPreProcessor = null; return null; }
-        if (result != cachedPreProcessor) { cachedPreProcessor = result; preEntityUBO = null; }
+        if (result != cachedPreProcessor) cachedPreProcessor = result;
         return cachedPreProcessor;
     }
 
     private static PostChain getF5Processor(Minecraft client) {
         PostChain result = loadProcessor(client, "velocity_f5", "F5/entity-riding");
         if (result == null) { cachedF5Processor = null; return null; }
-        if (result != cachedF5Processor) { cachedF5Processor = result; preEntityUBO = null; }
+        if (result != cachedF5Processor) cachedF5Processor = result;
         return cachedF5Processor;
     }
 
     private static PostChain getPostProcessor(Minecraft client) {
         PostChain result = loadProcessor(client, "velocity_post", "post-render");
         if (result == null) { cachedPostProcessor = null; return null; }
-        if (result != cachedPostProcessor) { cachedPostProcessor = result; postRenderUBO = null; }
+        if (result != cachedPostProcessor) cachedPostProcessor = result;
         return cachedPostProcessor;
     }
 
@@ -175,7 +181,7 @@ public class ShaderManager {
 
     // UBO writing
 
-    private static void writeAndRun(PostChain processor, String uboKey, boolean isPreSlot,
+    private static void writeAndRun(PostChain processor, String uboKey, ManagedUniformBuffer managedUBO,
                                     float blendFactor, float viewW, float viewH,
                                     int blurAlgorithm, int sampleAmount, Minecraft client) {
         List<PostPass> passes = ((PostChainAccessor) processor).getPasses();
@@ -184,28 +190,29 @@ public class ShaderManager {
         Map<String, GpuBuffer> uniformBuffers = ((PostPassAccessor) passes.getFirst()).getCustomUniforms();
         if (!uniformBuffers.containsKey(uboKey)) return;
 
-        if ( isPreSlot && preEntityUBO  == null) preEntityUBO  = GpuBufferUtil.createUBO("PreEntityBlurUniforms",  UBO_SIZE);
-        if (!isPreSlot && postRenderUBO == null) postRenderUBO = GpuBufferUtil.createUBO("PostRenderBlurUniforms", UBO_SIZE);
-        GpuBuffer ubo = isPreSlot ? preEntityUBO : postRenderUBO;
-
         // Replace the shader loader's placeholder buffer with ours and close the old one
-        GpuBuffer old = uniformBuffers.put(uboKey, ubo);
-        if (old != null && old != ubo) old.close();
+        GpuBuffer ubo = managedUBO.put(processor, uniformBuffers, uboKey);
 
-        // Write uniforms in std140 order - must match the GLSL block declaration
-        try (GpuBuffer.MappedView view = RenderSystem.getDevice().createCommandEncoder().mapBuffer(ubo, false, true)) {
-            Std140Builder b = Std140Builder.intoBuffer(view.data());
-            b.putMat4f(cameraState.getMvInverse());
-            b.putMat4f(cameraState.getProjInverse());
-            b.putMat4f(cameraState.getPrevModelView());
-            b.putMat4f(cameraState.getPrevProjection());
-            b.putVec3(cameraState.getDx(), cameraState.getDy(), cameraState.getDz());
-            b.putVec2(viewW, viewH);
-            b.putFloat(blendFactor);
-            b.putInt(sampleAmount);
-            b.putInt(blurAlgorithm);
-            b.putInt(1);
+        try {
+            // Write uniforms in std140 order - must match the GLSL block declaration
+            try (GpuBuffer.MappedView view = RenderSystem.getDevice().createCommandEncoder().mapBuffer(ubo, false, true)) {
+                Std140Builder b = Std140Builder.intoBuffer(view.data());
+                b.putMat4f(cameraState.getMvInverse());
+                b.putMat4f(cameraState.getProjInverse());
+                b.putMat4f(cameraState.getPrevModelView());
+                b.putMat4f(cameraState.getPrevProjection());
+                b.putVec3(cameraState.getDx(), cameraState.getDy(), cameraState.getDz());
+                b.putVec2(viewW, viewH);
+                b.putFloat(blendFactor);
+                b.putInt(sampleAmount);
+                b.putInt(blurAlgorithm);
+                b.putInt(1);
+            }
+
+            processor.process(client.getMainRenderTarget(), frameAllocator);
+        } catch (RuntimeException e) {
+            if (managedUBO.resetIfClosed(e)) return;
+            throw e;
         }
-        processor.process(client.getMainRenderTarget(), frameAllocator);
     }
 }
