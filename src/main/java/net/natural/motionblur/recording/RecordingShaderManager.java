@@ -21,8 +21,12 @@ import net.natural.motionblur.mixin.PostChainAccessor;
 import net.natural.motionblur.mixin.PostPassAccessor;
 import net.natural.motionblur.mixin.ShaderManagerAccessor;
 import org.lwjgl.glfw.GLFW;
+import org.lwjgl.opengl.GL11;
+import org.lwjgl.opengl.GL12;
+import org.lwjgl.opengl.GL30;
 
 import java.lang.reflect.Field;
+import java.nio.ByteBuffer;
 import java.lang.reflect.Method;
 import java.util.List;
 import java.util.Map;
@@ -45,6 +49,10 @@ public class RecordingShaderManager {
     private static final PostPass.Input[] savedSamplerInputs = new PostPass.Input[MAX_HISTORY];
     private static int lastW = 0;
     private static int lastH = 0;
+
+    private static int rawSpoutTexture = 0;
+    private static int rawSpoutW = 0;
+    private static int rawSpoutH = 0;
 
     // Frame blending
     private static PostChain recCombineChain = null;
@@ -111,10 +119,11 @@ public class RecordingShaderManager {
             applyIsolatedFrameBlending(main, realFps, targetHz);
 
             if (recHasFirstFrame) {
-                sendMainTextureToSpout(main, w, h);
+                blitMainToScreenAndSendSpout(main, w, h);
             }
 
             copyFramebuffer(cleanFrameTarget, main);
+            main.blitToScreen();
         } finally {
             savedAllocator = null;
         }
@@ -130,18 +139,89 @@ public class RecordingShaderManager {
             savedAllocator = GraphicsResourceAllocator.UNPOOLED;
             applyCursorOverlay(main, mc, w, h);
 
-            sendMainTextureToSpout(main, w, h);
+            blitMainToScreenAndSendSpout(main, w, h);
             copyFramebuffer(cleanFrameTarget, main);
+            main.blitToScreen();
         } finally {
             savedAllocator = previousAllocator;
         }
     }
 
-    private static void sendMainTextureToSpout(RenderTarget main, int w, int h) {
-        int glTexId = (main.getColorTexture() != null) ? GpuTextureHelper.getGlId(main.getColorTexture()) : 0;
-        if (glTexId != 0) {
-            SpoutBridge.sendTexture(glTexId, w, h);
+    private static void blitMainToScreenAndSendSpout(RenderTarget main, int w, int h) {
+        main.blitToScreen();
+        sendCurrentFramebufferToSpout(w, h);
+    }
+
+    private static void sendCurrentFramebufferToSpout(int w, int h) {
+        if (w <= 0 || h <= 0) return;
+
+        RenderSystem.assertOnRenderThread();
+
+        ensureRawSpoutTexture(w, h);
+        if (rawSpoutTexture == 0) return;
+
+        int oldTexture = GL11.glGetInteger(GL11.GL_TEXTURE_BINDING_2D);
+        int oldReadFbo = GL11.glGetInteger(GL30.GL_READ_FRAMEBUFFER_BINDING);
+        int oldDrawFbo = GL11.glGetInteger(GL30.GL_DRAW_FRAMEBUFFER_BINDING);
+
+        int[] oldViewport = new int[4];
+        GL11.glGetIntegerv(GL11.GL_VIEWPORT, oldViewport);
+
+        try {
+            GL11.glBindTexture(GL11.GL_TEXTURE_2D, rawSpoutTexture);
+            GL11.glCopyTexSubImage2D(GL11.GL_TEXTURE_2D, 0, 0, 0, 0, 0, w, h);
+            GL11.glFlush();
+            SpoutBridge.sendTexture(rawSpoutTexture, w, h);
+        } finally {
+            GL30.glBindFramebuffer(GL30.GL_READ_FRAMEBUFFER, oldReadFbo);
+            GL30.glBindFramebuffer(GL30.GL_DRAW_FRAMEBUFFER, oldDrawFbo);
+            GL11.glBindTexture(GL11.GL_TEXTURE_2D, oldTexture);
+            GL11.glViewport(oldViewport[0], oldViewport[1], oldViewport[2], oldViewport[3]);
         }
+    }
+
+    private static void ensureRawSpoutTexture(int w, int h) {
+        if (rawSpoutTexture != 0 && rawSpoutW == w && rawSpoutH == h) {
+            return;
+        }
+
+        destroyRawSpoutTexture();
+
+        rawSpoutW = w;
+        rawSpoutH = h;
+
+        int oldTexture = GL11.glGetInteger(GL11.GL_TEXTURE_BINDING_2D);
+
+        rawSpoutTexture = GL11.glGenTextures();
+        GL11.glBindTexture(GL11.GL_TEXTURE_2D, rawSpoutTexture);
+
+        GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MIN_FILTER, GL11.GL_LINEAR);
+        GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MAG_FILTER, GL11.GL_LINEAR);
+        GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_WRAP_S, GL12.GL_CLAMP_TO_EDGE);
+        GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_WRAP_T, GL12.GL_CLAMP_TO_EDGE);
+
+        GL11.glTexImage2D(
+                GL11.GL_TEXTURE_2D,
+                0,
+                GL11.GL_RGBA8,
+                w,
+                h,
+                0,
+                GL11.GL_RGBA,
+                GL11.GL_UNSIGNED_BYTE,
+                (ByteBuffer) null
+        );
+
+        GL11.glBindTexture(GL11.GL_TEXTURE_2D, oldTexture);
+    }
+
+    private static void destroyRawSpoutTexture() {
+        if (rawSpoutTexture != 0) {
+            GL11.glDeleteTextures(rawSpoutTexture);
+            rawSpoutTexture = 0;
+        }
+        rawSpoutW = 0;
+        rawSpoutH = 0;
     }
 
     // Cursor Overlay
@@ -490,6 +570,9 @@ public class RecordingShaderManager {
     }
 
     public static void destroy() {
+        if (RenderSystem.isOnRenderThread()) {
+            destroyRawSpoutTexture();
+        }
         if (cleanFrameTarget != null) { cleanFrameTarget.destroyBuffers(); cleanFrameTarget = null; }
         savedAllocator = null;
         invalidateFrameBlending();

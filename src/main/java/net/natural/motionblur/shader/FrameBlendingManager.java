@@ -26,6 +26,9 @@ public class FrameBlendingManager {
 
     private static final int MAX_HISTORY = 8;
 
+    private static final String MAIN_SAMPLER = "Main";
+    private static final String PREV_SAMPLER = "Prev";
+
     private static final String[] SAMPLE_NAMES = new String[MAX_HISTORY];
     static {
         for (int i = 0; i < MAX_HISTORY; i++) SAMPLE_NAMES[i] = "Sample" + i;
@@ -41,8 +44,11 @@ public class FrameBlendingManager {
     private static float smoothedFPS    = 0;
 
     // Accumulation
-    private static RenderTarget prevTarget = null;
+    private static RenderTarget accumReadTarget = null;
+    private static RenderTarget accumWriteTarget = null;
+    private static MutableTextureInput mainInput = null;
     private static MutableTextureInput prevInput = null;
+    private static boolean accumHasPrevious = false;
 
     private static int targetW = 0;
     private static int targetH = 0;
@@ -118,9 +124,13 @@ public class FrameBlendingManager {
             }
             historyInputs[i] = null;
         }
-        if (prevTarget != null) {
-            prevTarget.destroyBuffers();
-            prevTarget = null;
+        if (accumReadTarget != null) {
+            accumReadTarget.destroyBuffers();
+            accumReadTarget = null;
+        }
+        if (accumWriteTarget != null) {
+            accumWriteTarget.destroyBuffers();
+            accumWriteTarget = null;
         }
         targetW = 0;
         targetH = 0;
@@ -128,7 +138,9 @@ public class FrameBlendingManager {
         historyFilled = 0;
         lockedN = 1;
         smoothedFPS = 0;
+        mainInput = null;
         prevInput = null;
+        accumHasPrevious = false;
         cachedCombineChain = null;
         cachedAccumMaxChain = null;
         cachedAccumMixChain = null;
@@ -143,27 +155,37 @@ public class FrameBlendingManager {
         RenderTarget main = client.getMainRenderTarget();
         ensureTargets(main.width, main.height);
 
+        if (!accumHasPrevious) {
+            copyFramebuffer(main, accumReadTarget);
+            accumHasPrevious = true;
+            return;
+        }
+
         PostChain chain = loadChain(client, shaderName);
         if (chain == null) return;
 
         PostPass pass = firstPass(chain);
         if (pass == null) return;
 
-        // Inject our prevTarget directly as the "Prev" sampler (same technique as frame blending)
-        if (prevTarget != null) {
-            if (prevInput == null) {
-                prevInput = new MutableTextureInput("Prev", prevTarget);
-            } else {
-                prevInput.setTarget(prevTarget);
-            }
-            setSampler(pass, "Prev", prevInput);
+        if (mainInput == null) {
+            mainInput = new MutableTextureInput(MAIN_SAMPLER, main);
+        } else {
+            mainInput.setTarget(main);
         }
+        setSampler(pass, MAIN_SAMPLER, mainInput);
+
+        if (prevInput == null) {
+            prevInput = new MutableTextureInput(PREV_SAMPLER, accumReadTarget);
+        } else {
+            prevInput.setTarget(accumReadTarget);
+        }
+        setSampler(pass, PREV_SAMPLER, prevInput);
 
         float factor = strengthToBlendFactor(strength);
-        chain.process(main, allocator, (RenderPass rp) -> trySetUniform(rp, "blendFactor", new float[]{factor}));
+        chain.process(accumWriteTarget, allocator, (RenderPass rp) -> trySetUniform(rp, "blendFactor", new float[]{factor}));
 
-        // Save result for next frame
-        copyFramebuffer(main, prevTarget);
+        copyFramebuffer(accumWriteTarget, main);
+        swapAccumTargets();
     }
 
     private static float strengthToBlendFactor(float strength) {
@@ -199,19 +221,29 @@ public class FrameBlendingManager {
     // Targets & copying
 
     private static void ensureTargets(int w, int h) {
-        if (targetW == w && targetH == h && historyTargets[0] != null && prevTarget != null) return;
+        if (targetW == w && targetH == h && historyTargets[0] != null && accumReadTarget != null && accumWriteTarget != null) return;
         for (int i = 0; i < historyTargets.length; i++) {
             if (historyTargets[i] != null) historyTargets[i].destroyBuffers();
             historyTargets[i] = new MainTarget(w, h);
             historyInputs[i] = null;
         }
-        if (prevTarget != null) prevTarget.destroyBuffers();
-        prevTarget = new MainTarget(w, h);
+        if (accumReadTarget != null) accumReadTarget.destroyBuffers();
+        if (accumWriteTarget != null) accumWriteTarget.destroyBuffers();
+        accumReadTarget = new MainTarget(w, h);
+        accumWriteTarget = new MainTarget(w, h);
         targetW = w;
         targetH = h;
         historyWriteIndex = 0;
         historyFilled = 0;
+        mainInput = null;
         prevInput = null;
+        accumHasPrevious = false;
+    }
+
+    private static void swapAccumTargets() {
+        RenderTarget temp = accumReadTarget;
+        accumReadTarget = accumWriteTarget;
+        accumWriteTarget = temp;
     }
 
     private static void copyFramebuffer(RenderTarget src, RenderTarget dst) {

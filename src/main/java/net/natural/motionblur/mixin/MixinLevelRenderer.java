@@ -38,20 +38,45 @@ public class MixinLevelRenderer {
             Matrix4f projectionMatrix,
             CallbackInfo ci
     ) {
-        ShaderManager.captureAllocator(resourceAllocator);
-        RecordingShaderManager.captureAllocator(resourceAllocator);
+        ConfigEntries config = ConfigManager.getConfig();
+        boolean blurActive = config.enabled && config.getEffectiveMotionBlurStrength() != 0.0f;
+        boolean recordingActive = config.recordingOverlayEnabled;
+        boolean needsFrameSetup = blurActive || recordingActive;
+        boolean usesVelocityBlur = blurActive && config.usesVelocityBlur();
+
+        if (!needsFrameSetup) {
+            ShaderManager.clearFrameAllocator();
+            return;
+        }
+
         ShaderManager.beginFrame();
+
+        if (blurActive) {
+            ShaderManager.captureAllocator(resourceAllocator);
+        }
+        if (recordingActive) {
+            RecordingShaderManager.captureAllocator(resourceAllocator);
+        }
 
         double cx = camera.getPosition().x();
         double cy = camera.getPosition().y();
         double cz = camera.getPosition().z();
 
+        scratchModelView.set(modelViewMatrix);
+        scratchProjection.set(projectionMatrix);
+
+        if (!usesVelocityBlur) {
+            prevModelView.set(scratchModelView);
+            prevProjection.set(scratchProjection);
+            prevCamX = cx;
+            prevCamY = cy;
+            prevCamZ = cz;
+            return;
+        }
+
         float dx = (float)(cx - prevCamX);
         float dy = (float)(cy - prevCamY);
         float dz = (float)(cz - prevCamZ);
-
-        scratchModelView.set(modelViewMatrix);
-        scratchProjection.set(projectionMatrix);
 
         ShaderManager.setFrameMotionBlur(
                 scratchModelView, prevModelView,

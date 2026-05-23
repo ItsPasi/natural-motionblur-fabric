@@ -1,8 +1,5 @@
 {
-  "targets": {
-    "swap": {},
-    "prev": {}
-  },
+  "targets": {},
   "passes": [
     {
       "vertex_shader": "minecraft:post/screenquad",
@@ -14,10 +11,10 @@
         },
         {
           "sampler_name": "Prev",
-          "target": "prev"
+          "target": "minecraft:main"
         }
       ],
-      "output": "swap",
+      "output": "minecraft:main",
       "uniforms": [
         {
           "name": "blendFactor",
@@ -27,17 +24,6 @@
           ]
         }
       ]
-    },
-    {
-      "vertex_shader": "minecraft:post/screenquad",
-      "fragment_shader": "naturalmotionblur:post/blit",
-      "inputs": [
-        {
-          "sampler_name": "In",
-          "target": "swap"
-        }
-      ],
-      "output": "minecraft:main"
     }
   ]
 }
