@@ -29,7 +29,7 @@ public class CommandManager {
     }
 
     private static int setMotionBlurStrength(float strength) {
-        if (strength < 0.0f || strength > 10.0f) {
+        if (strength < 0.0f || strength > 2.0f) {
             assert Minecraft.getInstance().player != null;
             Minecraft.getInstance().player.displayClientMessage(
                     Component.literal("§cInvalid motion blur strength! Value must be between 0 and 2."), false

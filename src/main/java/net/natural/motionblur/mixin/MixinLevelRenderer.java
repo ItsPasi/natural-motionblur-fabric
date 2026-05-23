@@ -45,13 +45,38 @@ public class MixinLevelRenderer {
             boolean shouldRenderSky,
             CallbackInfo ci
     ) {
-        ShaderManager.captureAllocator(resourceAllocator);
-        RecordingShaderManager.captureAllocator(resourceAllocator);
+        ConfigEntries config = ConfigManager.getConfig();
+        boolean blurActive = config.enabled && config.getEffectiveMotionBlurStrength() != 0.0f;
+        boolean recordingActive = config.recordingOverlayEnabled;
+        boolean needsVelocityState = blurActive && config.usesVelocityBlur();
+
+        if (!blurActive && !recordingActive) {
+            ShaderManager.clearFrameAllocator();
+            return;
+        }
+
+        if (blurActive) {
+            ShaderManager.captureAllocator(resourceAllocator);
+        } else {
+            ShaderManager.clearFrameAllocator();
+        }
+        if (recordingActive) {
+            RecordingShaderManager.captureAllocator(resourceAllocator);
+        }
         ShaderManager.beginFrame();
 
         double cx = camera.getPosition().x();
         double cy = camera.getPosition().y();
         double cz = camera.getPosition().z();
+
+        if (!needsVelocityState) {
+            prevModelView.set(modelViewMatrix);
+            prevProjection.set(projectionMatrix);
+            prevCamX = cx;
+            prevCamY = cy;
+            prevCamZ = cz;
+            return;
+        }
 
         float dx = (float)(cx - prevCamX);
         float dy = (float)(cy - prevCamY);
@@ -78,7 +103,7 @@ public class MixinLevelRenderer {
     private void naturalMotionBlur$beforeSubmitEntities(PoseStack poseStack, LevelRenderState levelRenderState, SubmitNodeCollector output, CallbackInfo ci) {
         ConfigEntries config = ConfigManager.getConfig();
 
-        if (!config.usesVelocityBlur()) {
+        if (!config.enabled || config.getEffectiveMotionBlurStrength() == 0.0f || !config.usesVelocityBlur()) {
             return;
         }
         if (naturalMotionBlur$shouldUseSpecialSingleBlur()) {
