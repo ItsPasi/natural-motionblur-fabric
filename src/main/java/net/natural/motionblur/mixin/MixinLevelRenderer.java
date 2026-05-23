@@ -34,14 +34,39 @@ public class MixinLevelRenderer {
     @Inject(method = "renderLevel", at = @At("HEAD"))
     private void naturalMotionBlur$onRenderLevelHead(GraphicsResourceAllocator resourceAllocator, DeltaTracker deltaTracker, boolean renderOutline, Camera camera, Matrix4f modelViewMatrix, Matrix4f projectionMatrix, Matrix4f frustumMatrix, GpuBufferSlice terrainFog, Vector4f fogColor, boolean shouldRenderSky, CallbackInfo ci) {
 
-        ShaderManager.captureAllocator(resourceAllocator);
-        RecordingShaderManager.captureAllocator(resourceAllocator);
+        ConfigEntries config = ConfigManager.getConfig();
+        boolean blurActive = config.enabled && config.getEffectiveMotionBlurStrength() != 0.0f;
+        boolean recordingActive = config.recordingOverlayEnabled;
+        boolean needsVelocityState = blurActive && config.usesVelocityBlur();
+
+        if (!blurActive && !recordingActive) {
+            ShaderManager.clearFrameAllocator();
+            return;
+        }
+
+        if (blurActive) {
+            ShaderManager.captureAllocator(resourceAllocator);
+        } else {
+            ShaderManager.clearFrameAllocator();
+        }
+        if (recordingActive) {
+            RecordingShaderManager.captureAllocator(resourceAllocator);
+        }
         ShaderManager.beginFrame();
 
         var camPos = camera.position();
         double cx = camPos.x();
         double cy = camPos.y();
         double cz = camPos.z();
+
+        if (!needsVelocityState) {
+            prevModelView.set(modelViewMatrix);
+            prevProjection.set(projectionMatrix);
+            prevCamX = cx;
+            prevCamY = cy;
+            prevCamZ = cz;
+            return;
+        }
 
         float dx = (float)(cx - prevCamX);
         float dy = (float)(cy - prevCamY);
@@ -68,7 +93,7 @@ public class MixinLevelRenderer {
     private void naturalMotionBlur$beforeSubmitEntities(PoseStack poseStack, LevelRenderState levelRenderState, SubmitNodeCollector output, CallbackInfo ci) {
         ConfigEntries config = ConfigManager.getConfig();
 
-        if (!config.usesVelocityBlur()) {
+        if (!config.enabled || config.getEffectiveMotionBlurStrength() == 0.0f || !config.usesVelocityBlur()) {
             return;
         }
         if (naturalMotionBlur$shouldUseSpecialSingleBlur()) {

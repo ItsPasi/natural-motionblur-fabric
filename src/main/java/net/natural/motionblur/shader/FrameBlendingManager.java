@@ -32,6 +32,7 @@ public class FrameBlendingManager {
     private static final int MAX_HISTORY = 8;
     private static final int UBO_RING_SIZE = 3;
 
+    private static final String MAIN_SAMPLER = "Main";
     private static final String PREV_SAMPLER = "Prev";
     private static final String FRAME_BLEND_UBO = "FrameBlendParamsUniforms";
     private static final String ACCUM_UBO = "AccumulationUniforms";
@@ -60,8 +61,11 @@ public class FrameBlendingManager {
     private static PostChain cachedAccumMaxChain = null;
     private static PostChain cachedAccumMixChain = null;
     private static final ManagedUniformBuffer accumSimpleUBO = new ManagedUniformBuffer(ACCUM_UBO, UBO_SIZE);
-    private static RenderTarget prevTarget       = null;
+    private static RenderTarget accumReadTarget  = null;
+    private static RenderTarget accumWriteTarget = null;
+    private static MutableTextureInput injectedMainInput = null;
     private static MutableTextureInput injectedPrevInput = null;
+    private static boolean accumHasPrevious = false;
 
     private static int targetW = 0;
     private static int targetH = 0;
@@ -140,9 +144,13 @@ public class FrameBlendingManager {
             }
             historyInputs[i] = null;
         }
-        if (prevTarget != null) {
-            prevTarget.destroyBuffers();
-            prevTarget = null;
+        if (accumReadTarget != null) {
+            accumReadTarget.destroyBuffers();
+            accumReadTarget = null;
+        }
+        if (accumWriteTarget != null) {
+            accumWriteTarget.destroyBuffers();
+            accumWriteTarget = null;
         }
         combineUBORing.reset();
         accumSimpleUBO.reset();
@@ -155,7 +163,9 @@ public class FrameBlendingManager {
         cachedCombineChain = null;
         cachedAccumMaxChain = null;
         cachedAccumMixChain = null;
+        injectedMainInput = null;
         injectedPrevInput = null;
+        accumHasPrevious = false;
         loadErrorLogged.clear();
     }
 
@@ -192,6 +202,12 @@ public class FrameBlendingManager {
         RenderTarget main = client.getMainRenderTarget();
         ensureTargets(main.width, main.height);
 
+        if (!accumHasPrevious) {
+            copyTexture(main, accumReadTarget);
+            accumHasPrevious = true;
+            return;
+        }
+
         PostChain chain = loadAccumSimpleChain(client, shaderName, isMax);
         if (chain == null) return;
 
@@ -206,15 +222,23 @@ public class FrameBlendingManager {
         try {
             writeFloatUBO(ubo, strengthToBlendFactor(strength));
 
-            if (injectedPrevInput == null) {
-                injectedPrevInput = new MutableTextureInput(PREV_SAMPLER, prevTarget);
+            if (injectedMainInput == null) {
+                injectedMainInput = new MutableTextureInput(MAIN_SAMPLER, main);
             } else {
-                injectedPrevInput.setTarget(prevTarget);
+                injectedMainInput.setTarget(main);
+            }
+            setSampler(pass, MAIN_SAMPLER, injectedMainInput);
+
+            if (injectedPrevInput == null) {
+                injectedPrevInput = new MutableTextureInput(PREV_SAMPLER, accumReadTarget);
+            } else {
+                injectedPrevInput.setTarget(accumReadTarget);
             }
             setSampler(pass, PREV_SAMPLER, injectedPrevInput);
 
-            chain.process(main, allocator);
-            copyTexture(main, prevTarget);
+            chain.process(accumWriteTarget, allocator);
+            copyTexture(accumWriteTarget, main);
+            swapAccumTargets();
         } catch (RuntimeException e) {
             if (accumSimpleUBO.resetIfClosed(e)) return;
             throw e;
@@ -235,9 +259,11 @@ public class FrameBlendingManager {
 
             if (isMax && result != cachedAccumMaxChain) {
                 cachedAccumMaxChain = result;
+                injectedMainInput = null;
                 injectedPrevInput = null;
             } else if (!isMax && result != cachedAccumMixChain) {
                 cachedAccumMixChain = result;
+                injectedMainInput = null;
                 injectedPrevInput = null;
             }
 
@@ -251,19 +277,29 @@ public class FrameBlendingManager {
     }
 
     private static void ensureTargets(int w, int h) {
-        if (targetW == w && targetH == h && historyTargets[0] != null && prevTarget != null) return;
+        if (targetW == w && targetH == h && historyTargets[0] != null && accumReadTarget != null && accumWriteTarget != null) return;
         for (int i = 0; i < historyTargets.length; i++) {
             if (historyTargets[i] != null) historyTargets[i].destroyBuffers();
             historyTargets[i] = new MainTarget(w, h);
             historyInputs[i] = null;
         }
-        if (prevTarget != null) prevTarget.destroyBuffers();
-        prevTarget = new MainTarget(w, h);
+        if (accumReadTarget != null) accumReadTarget.destroyBuffers();
+        if (accumWriteTarget != null) accumWriteTarget.destroyBuffers();
+        accumReadTarget = new MainTarget(w, h);
+        accumWriteTarget = new MainTarget(w, h);
         targetW = w;
         targetH = h;
         historyWriteIndex = 0;
         historyFilled = 0;
+        injectedMainInput = null;
         injectedPrevInput = null;
+        accumHasPrevious = false;
+    }
+
+    private static void swapAccumTargets() {
+        RenderTarget temp = accumReadTarget;
+        accumReadTarget = accumWriteTarget;
+        accumWriteTarget = temp;
     }
 
     private static void copyTexture(RenderTarget src, RenderTarget dst) {
