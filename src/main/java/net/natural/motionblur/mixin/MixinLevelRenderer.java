@@ -113,7 +113,7 @@ public class MixinLevelRenderer {
         ShaderManager.applyPreEntityBlur();
     }
 
-    // Apply post-entity blur
+    // Apply post-entity blur.
     @Inject(method = "renderLevel", at = @At("TAIL"))
     private void naturalMotionBlur$onRenderLevelTail(GraphicsResourceAllocator resourceAllocator, DeltaTracker deltaTracker, boolean renderOutline, Camera camera, Matrix4f modelViewMatrix, Matrix4f projectionMatrix, Matrix4f cullingMatrix, GpuBufferSlice terrainFog, Vector4f fogColor, boolean shouldRenderSky, CallbackInfo ci) {
         ConfigEntries config = ConfigManager.getConfig();
@@ -121,21 +121,17 @@ public class MixinLevelRenderer {
 
         if (config.blurAlgorithm == ConfigEntries.BlurAlgorithm.HYBRID_BLENDING) {
             if (!specialSingleBlur) {
-                ShaderManager.applyPostRenderBlur();
-            } else {
-                ShaderManager.applyFrameBlendingOnly();
+                ShaderManager.applyPostRenderVelocityOnly();
             }
-        } else if (config.blurAlgorithm != ConfigEntries.BlurAlgorithm.VELOCITY_BASED
-                || !specialSingleBlur) {
-            ShaderManager.applyPostRenderBlur();
+        } else if (config.blurAlgorithm == ConfigEntries.BlurAlgorithm.VELOCITY_BASED && !specialSingleBlur) {
+            ShaderManager.applyPostRenderVelocityOnly();
         }
-        ShaderManager.clearFrameAllocator();
     }
 
     @Unique
     private boolean naturalMotionBlur$shouldUseSpecialSingleBlur() {
         Minecraft client = Minecraft.getInstance();
-        if (client.options.getCameraType() != CameraType.FIRST_PERSON) {return true;}
+        if (client.options.getCameraType() != CameraType.FIRST_PERSON) { return true; }
         return client.player != null && client.player.isPassenger();
     }
 }
