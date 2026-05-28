@@ -34,25 +34,21 @@ float noise(vec2 pos) {
 
 void main() {
     ivec2 texel = ivec2(gl_FragCoord.xy);
-
     float depth = texelFetch(MainDepthSampler, texel, 0).x;
+
     // Iris Hand Fix
-    if (depth < 0.56) {
-        color = texture(MainSampler, texCoord);
-        return;
-    }
+    if (depth < 0.56) {color = texture(MainSampler, texCoord); return;}
     // Depth blend inconsistency fix
     float dilatedDepth = depth;
-    for (int x = -1; x <= 1; x++)
-        for (int y = -1; y <= 1; y++)
-            dilatedDepth = min(dilatedDepth, texelFetch(MainDepthSampler, texel + ivec2(x, y), 0).x);
-    // Camera with depth cancelation
+    dilatedDepth = min(dilatedDepth, texelFetch(MainDepthSampler, texel + ivec2( 1,  0), 0).x);
+    dilatedDepth = min(dilatedDepth, texelFetch(MainDepthSampler, texel + ivec2(-1,  0), 0).x);
+    dilatedDepth = min(dilatedDepth, texelFetch(MainDepthSampler, texel + ivec2( 0,  1), 0).x);
+    dilatedDepth = min(dilatedDepth, texelFetch(MainDepthSampler, texel + ivec2( 0, -1), 0).x);
+    // Camera blur with depth blur cancelation
     vec2 velFull   = texCoord - reproject(vec3(texCoord, dilatedDepth)).xy;
     vec2 velCamera = texCoord - reproject(vec3(texCoord, 1.0)).xy;
     float camMag   = dot(velCamera, velCamera);
-    vec2 velocity  = clampLength(camMag > 1e-12
-                                 ? velFull - velCamera * (clamp(dot(velFull, velCamera), 0.0, camMag) / camMag)
-                                 : velFull);
+    vec2 velocity  = clampLength(camMag > 1e-12 ? velFull - velCamera * (clamp(dot(velFull, velCamera), 0.0, camMag) / camMag) : velFull);
 
     float speed   = length(velocity);
     int   samples = clamp(int(ceil(speed * float(sampleCount))), 4, sampleCount);

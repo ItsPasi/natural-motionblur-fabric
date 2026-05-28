@@ -21,51 +21,37 @@
         {
           "name": "cursorX",
           "type": "float",
-          "value": [
-            0.0
-          ]
+          "value": [0.0]
         },
         {
           "name": "cursorY",
           "type": "float",
-          "value": [
-            0.0
-          ]
+          "value": [0.0]
         },
         {
           "name": "cursorScale",
           "type": "float",
-          "value": [
-            1.0
-          ]
+          "value": [1.0]
         },
         {
           "name": "cursorVisible",
           "type": "float",
-          "value": [
-            0.0
-          ]
+          "value": [0.0]
         },
         {
           "name": "prevCursorX",
           "type": "float",
-          "value": [
-            0.0
-          ]
+          "value": [0.0]
         },
         {
           "name": "prevCursorY",
           "type": "float",
-          "value": [
-            0.0
-          ]
+          "value": [0.0]
         },
         {
           "name": "blurStrength",
           "type": "float",
-          "value": [
-            1.0
-          ]
+          "value": [1.0]
         }
       ]
     },

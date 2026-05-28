@@ -11,12 +11,11 @@ uniform vec2 InSize;
 out vec4 fragColor;
 
 void main() {
-    vec4 CurrTexel = texture(MainSampler, texCoord);
-    vec4 PrevTexel = texture(PrevSampler, texCoord);
-    vec4 CurrLinear = CurrTexel * CurrTexel;
-    vec4 PrevLinear = PrevTexel * PrevTexel;
+    vec3 curr = texture(MainSampler, texCoord).rgb;
+    vec3 prev = texture(PrevSampler, texCoord).rgb;
+    vec3 currLinear = curr * curr;
+    vec3 prevLinear = prev * prev;
 
-    vec4 blended = mix(CurrLinear, PrevLinear, blendFactor);
-    fragColor = sqrt(blended);
-    fragColor.w = 1.0;
+    vec3 blended = mix(currLinear, prevLinear, blendFactor);
+    fragColor = vec4(sqrt(blended), 1.0);
 }

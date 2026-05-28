@@ -91,7 +91,7 @@ public class MixinLevelRenderer {
         prevCamZ = cz;
     }
 
-    // Apply pre-entity blur
+    // Apply pre-entity velocity blur
     @Inject(
             method = "method_62214",
             at = @At(
@@ -114,23 +114,15 @@ public class MixinLevelRenderer {
         ShaderManager.applyPreEntityBlur();
     }
 
-    // Apply post-entity blur
+    // Apply post-entity velocity blur. Frame blending blur after the hand renders
     @Inject(method = "renderLevel", at = @At("TAIL"))
     private void naturalMotionBlur$onRenderLevelTail(GraphicsResourceAllocator resourceAllocator, DeltaTracker deltaTracker, boolean renderOutline, Camera camera, GameRenderer gameRenderer, Matrix4f modelViewMatrix, Matrix4f projectionMatrix, CallbackInfo ci) {
         ConfigEntries config = ConfigManager.getConfig();
         boolean specialSingleBlur = naturalMotionBlur$shouldUseSpecialSingleBlur();
 
-        if (config.blurAlgorithm == ConfigEntries.BlurAlgorithm.HYBRID_BLENDING) {
-            if (!specialSingleBlur) {
-                ShaderManager.applyPostRenderBlur();
-            } else {
-                ShaderManager.applyFrameBlendingOnly();
-            }
-        } else if (config.blurAlgorithm != ConfigEntries.BlurAlgorithm.VELOCITY_BASED
-                || !specialSingleBlur) {
-            ShaderManager.applyPostRenderBlur();
+        if (config.usesVelocityBlur() && !specialSingleBlur) {
+            ShaderManager.applyPostRenderVelocityOnly();
         }
-        ShaderManager.clearFrameAllocator();
     }
 
     @Unique

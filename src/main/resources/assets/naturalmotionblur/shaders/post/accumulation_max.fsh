@@ -11,9 +11,9 @@ uniform vec2 InSize;
 out vec4 fragColor;
 
 void main() {
-    vec4 CurrTexel = texture(MainSampler, texCoord);
-    vec4 PrevTexel = texture(PrevSampler, texCoord);
-    vec4 fadedPrev = PrevTexel * blendFactor;
-    fragColor = max(CurrTexel, fadedPrev);
-    fragColor.w = 1.0;
+    vec3 curr = texture(MainSampler, texCoord).rgb;
+    vec3 prev = texture(PrevSampler, texCoord).rgb;
+
+    vec3 fadedPrev = prev * blendFactor;
+    fragColor = vec4(max(curr, fadedPrev), 1.0);
 }

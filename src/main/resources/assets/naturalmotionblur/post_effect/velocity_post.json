@@ -7,147 +7,26 @@
       "vertex_shader": "minecraft:post/screenquad",
       "fragment_shader": "naturalmotionblur:post/velocity_post",
       "inputs": [
-        {
-          "sampler_name": "Main",
-          "target": "minecraft:main"
-        },
-        {
-          "sampler_name": "MainDepth",
-          "target": "minecraft:main",
-          "use_depth_buffer": true
-        }
+        {"sampler_name": "Main", "target": "minecraft:main"},
+        {"sampler_name": "MainDepth", "target": "minecraft:main", "use_depth_buffer": true}
       ],
       "output": "swap",
       "uniforms": [
-        {
-          "name": "mvInverse",
-          "type": "matrix4x4",
-          "value": [
-            1,
-            0,
-            0,
-            0,
-            0,
-            1,
-            0,
-            0,
-            0,
-            0,
-            1,
-            0,
-            0,
-            0,
-            0,
-            1
-          ]
-        },
-        {
-          "name": "projInverse",
-          "type": "matrix4x4",
-          "value": [
-            1,
-            0,
-            0,
-            0,
-            0,
-            1,
-            0,
-            0,
-            0,
-            0,
-            1,
-            0,
-            0,
-            0,
-            0,
-            1
-          ]
-        },
-        {
-          "name": "prevModelView",
-          "type": "matrix4x4",
-          "value": [
-            1,
-            0,
-            0,
-            0,
-            0,
-            1,
-            0,
-            0,
-            0,
-            0,
-            1,
-            0,
-            0,
-            0,
-            0,
-            1
-          ]
-        },
-        {
-          "name": "prevProjection",
-          "type": "matrix4x4",
-          "value": [
-            1,
-            0,
-            0,
-            0,
-            0,
-            1,
-            0,
-            0,
-            0,
-            0,
-            1,
-            0,
-            0,
-            0,
-            0,
-            1
-          ]
-        },
-        {
-          "name": "cameraDelta",
-          "type": "vec3",
-          "value": [
-            0,
-            0,
-            0
-          ]
-        },
-        {
-          "name": "view_res",
-          "type": "vec2",
-          "value": [
-            1,
-            1
-          ]
-        },
-        {
-          "name": "blendFactor",
-          "type": "float",
-          "value": [
-            0.5
-          ]
-        },
-        {
-          "name": "sampleCount",
-          "type": "int",
-          "value": [
-            100
-          ]
-        }
+        {"name": "mvInverse",      "type": "matrix4x4", "value": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]},
+        {"name": "projInverse",    "type": "matrix4x4", "value": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]},
+        {"name": "prevModelView",  "type": "matrix4x4", "value": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]},
+        {"name": "prevProjection", "type": "matrix4x4", "value": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]},
+        {"name": "cameraDelta",    "type": "vec3",      "value": [0, 0, 0]},
+        {"name": "view_res",       "type": "vec2",      "value": [1, 1]},
+        {"name": "blendFactor",    "type": "float",     "value": [0.5]},
+        {"name": "sampleCount",    "type": "int",       "value": [100]}
       ]
     },
     {
       "vertex_shader": "minecraft:post/screenquad",
       "fragment_shader": "naturalmotionblur:post/blit",
       "inputs": [
-        {
-          "sampler_name": "In",
-          "target": "swap"
-        }
+        {"sampler_name": "In", "target": "swap"}
       ],
       "output": "minecraft:main"
     }

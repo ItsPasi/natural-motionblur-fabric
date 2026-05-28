@@ -5,24 +5,12 @@
       "vertex_shader": "minecraft:post/screenquad",
       "fragment_shader": "naturalmotionblur:post/accumulation_max",
       "inputs": [
-        {
-          "sampler_name": "Main",
-          "target": "minecraft:main"
-        },
-        {
-          "sampler_name": "Prev",
-          "target": "minecraft:main"
-        }
+        {"sampler_name": "Main", "target": "minecraft:main"},
+        {"sampler_name": "Prev", "target": "minecraft:main"}
       ],
       "output": "minecraft:main",
       "uniforms": [
-        {
-          "name": "blendFactor",
-          "type": "float",
-          "value": [
-            1
-          ]
-        }
+        {"name": "blendFactor", "type": "float", "value": [1]}
       ]
     }
   ]

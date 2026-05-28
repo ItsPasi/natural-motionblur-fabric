@@ -46,17 +46,30 @@ public class ShaderManager {
         cameraState.setFrame(modelView, prevModelView, projection, prevProjection, dx, dy, dz);
     }
 
-    public static void applyPreEntityBlur()     { if (shouldRun()) applyBlurInternal(BlurPass.NORMAL_PRE);  }
-    public static void applyF5EntityRideBlur()  { if (shouldRun()) applyBlurInternal(BlurPass.SPECIAL_F5);  }
-    public static void applyPostRenderBlur()    { if (shouldRun()) applyBlurInternal(BlurPass.NORMAL_POST); }
-    public static void applyFrameBlendingOnly() { if (shouldRun()) applyFrameBlendingInternal(); }
+    public static void applyPreEntityBlur()       { if (shouldRun()) applyBlurInternal(BlurPass.NORMAL_PRE, true);  }
+    public static void applyF5EntityRideBlur()    { if (shouldRun()) applyBlurInternal(BlurPass.SPECIAL_F5, true);  }
+    public static void applyPostRenderVelocityOnly() { if (shouldRun()) applyBlurInternal(BlurPass.NORMAL_POST, false); }
+
+    public static void applyDeferredTemporalBlur() {
+        if (frameAllocator == null || !shouldRun()) return;
+
+        ConfigEntries config = ConfigManager.getConfig();
+        switch (config.blurAlgorithm) {
+            case FRAME_BLENDING, HYBRID_BLENDING -> applyFrameBlendingInternal();
+            case ACCUMULATION_MAX -> FrameBlendingManager.applyAccumulationMax(
+                    frameAllocator, config.getEffectiveMotionBlurStrength());
+            case ACCUMULATION_MIX -> FrameBlendingManager.applyAccumulationMix(
+                    frameAllocator, config.getEffectiveMotionBlurStrength());
+            default -> {}
+        }
+    }
 
     private static boolean shouldRun() {
         ConfigEntries config = ConfigManager.getConfig();
         return config.enabled && config.getEffectiveMotionBlurStrength() != 0.0F;
     }
 
-    private static void applyBlurInternal(BlurPass pass) {
+    private static void applyBlurInternal(BlurPass pass, boolean allowHybridFrameBlending) {
         if (frameAllocator == null) return;
 
         ConfigEntries config = ConfigManager.getConfig();
@@ -132,7 +145,7 @@ public class ShaderManager {
                 if (p != null) {
                     p.process(client.getMainRenderTarget(), frameAllocator, uniformSetter);
                 }
-                if (config.blurAlgorithm == ConfigEntries.BlurAlgorithm.HYBRID_BLENDING) {
+                if (allowHybridFrameBlending && config.blurAlgorithm == ConfigEntries.BlurAlgorithm.HYBRID_BLENDING) {
                     applyFrameBlendingInternal();
                 }
             }
