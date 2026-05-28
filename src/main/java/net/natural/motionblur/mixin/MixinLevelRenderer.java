@@ -124,15 +124,11 @@ public class MixinLevelRenderer {
 
         if (config.blurAlgorithm == ConfigEntries.BlurAlgorithm.HYBRID_BLENDING) {
             if (!specialSingleBlur) {
-                ShaderManager.applyPostRenderBlur();
-            } else {
-                ShaderManager.applyFrameBlendingOnly();
+                ShaderManager.applyPostRenderVelocityOnly();
             }
-        } else if (config.blurAlgorithm != ConfigEntries.BlurAlgorithm.VELOCITY_BASED
-                || !specialSingleBlur) {
-            ShaderManager.applyPostRenderBlur();
+        } else if (config.blurAlgorithm == ConfigEntries.BlurAlgorithm.VELOCITY_BASED && !specialSingleBlur) {
+            ShaderManager.applyPostRenderVelocityOnly();
         }
-        ShaderManager.clearFrameAllocator();
     }
 
     @Unique
