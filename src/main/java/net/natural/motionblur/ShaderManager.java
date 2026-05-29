@@ -33,6 +33,7 @@ public class ShaderManager {
     private static final BlurStrengthCalculator strengthCalc = new BlurStrengthCalculator();
 
     private static GraphicsResourceAllocator frameAllocator = null;
+    private static boolean deferredTemporalBlurApplied = false;
 
     private static PostChain cachedPreProcessor  = null;
     private static PostChain cachedF5Processor   = null;
@@ -48,7 +49,10 @@ public class ShaderManager {
 
     public static void captureAllocator(GraphicsResourceAllocator allocator) { frameAllocator = allocator; }
     public static void clearFrameAllocator() { frameAllocator = null; }
-    public static void beginFrame() { frameTimer.beginFrame(); }
+    public static void beginFrame() {
+        frameTimer.beginFrame();
+        deferredTemporalBlurApplied = false;
+    }
     public static float getCurrentFPS() { return frameTimer.getFPS(); }
     public static void invalidate() {
         preEntityUBO.reset();
@@ -63,42 +67,52 @@ public class ShaderManager {
         cameraState.setFrame(modelView, prevModelView, projection, prevProjection, dx, dy, dz);
     }
 
-    public static void applyPreEntityBlur()     { if (shouldRun()) applyBlurInternal(BlurPass.NORMAL_PRE);  }
-    public static void applyF5EntityRideBlur()  { if (shouldRun()) applyBlurInternal(BlurPass.SPECIAL_F5);  }
-    public static void applyPostRenderBlur()    { if (shouldRun()) applyBlurInternal(BlurPass.NORMAL_POST); }
-    public static void applyFrameBlendingOnly() { if (shouldRun()) applyFrameBlendingInternal(); }
+    public static void applyPreEntityBlur()          { if (shouldRun()) applyBlurInternal(BlurPass.NORMAL_PRE,  true);  }
+    public static void applyF5EntityRideBlur()       { if (shouldRun()) applyBlurInternal(BlurPass.SPECIAL_F5,  true);  }
+    public static void applyPostRenderVelocityOnly() { if (shouldRun()) applyBlurInternal(BlurPass.NORMAL_POST, false); }
+
+    public static void applyDeferredTemporalBlur() {
+        if (deferredTemporalBlurApplied || frameAllocator == null || !shouldRun()) return;
+
+        ConfigEntries config = ConfigManager.getConfig();
+        switch (config.blurAlgorithm) {
+            case FRAME_BLENDING, HYBRID_BLENDING -> {
+                applyFrameBlendingInternal();
+                deferredTemporalBlurApplied = true;
+            }
+            case ACCUMULATION_MAX -> {
+                FrameBlendingManager.applyAccumulationMax(
+                        frameAllocator, config.getEffectiveMotionBlurStrength());
+                deferredTemporalBlurApplied = true;
+            }
+            case ACCUMULATION_MIX -> {
+                FrameBlendingManager.applyAccumulationMix(
+                        frameAllocator, config.getEffectiveMotionBlurStrength());
+                deferredTemporalBlurApplied = true;
+            }
+            default -> {}
+        }
+    }
 
     private static boolean shouldRun() {
         ConfigEntries config = ConfigManager.getConfig();
         return config.enabled && config.getEffectiveMotionBlurStrength() != 0;
     }
 
-    private static void applyBlurInternal(BlurPass pass) {
+    private static void applyBlurInternal(BlurPass pass, boolean includeTemporal) {
         if (frameAllocator == null) return;
 
         ConfigEntries config = ConfigManager.getConfig();
         Minecraft     client = Minecraft.getInstance();
 
-        // Accumulation Options
-        if (config.blurAlgorithm == ConfigEntries.BlurAlgorithm.FRAME_BLENDING) {
-            if (pass == BlurPass.NORMAL_POST) {
-                FrameBlendingManager.applyFrameBlending(
-                        frameAllocator, frameTimer.getFPS(), frameTimer.getRefreshRate());
-            }
-            return;
-        }
+        // Accumulation Blur
+        if (includeTemporal) {
+            if (config.blurAlgorithm == ConfigEntries.BlurAlgorithm.FRAME_BLENDING) {return;}
+            if (config.blurAlgorithm == ConfigEntries.BlurAlgorithm.ACCUMULATION_MAX) {return;}
+            if (config.blurAlgorithm == ConfigEntries.BlurAlgorithm.ACCUMULATION_MIX) {return;}
+        } else if (!config.usesVelocityBlur()) {return;}
 
-        if (config.blurAlgorithm == ConfigEntries.BlurAlgorithm.ACCUMULATION_MAX) {
-            FrameBlendingManager.applyAccumulationMax(frameAllocator, config.getEffectiveMotionBlurStrength());
-            return;
-        }
-
-        if (config.blurAlgorithm == ConfigEntries.BlurAlgorithm.ACCUMULATION_MIX) {
-            FrameBlendingManager.applyAccumulationMix(frameAllocator, config.getEffectiveMotionBlurStrength());
-            return;
-        }
-
-        // Velocity Option
+        // Velocity Blur
         BlurStrengthCalculator.Result blur = strengthCalc.calculate(
                 config.getEffectiveMotionBlurStrength(),
                 frameTimer.getFPS(),
@@ -126,7 +140,7 @@ public class ShaderManager {
                 if (p != null) {
                     writeAndRun(p, "PostRenderBlurUniforms", postRenderUBO, blur.strength(), viewW, viewH, algo, blur.sampleAmount(), client);
                 }
-                if (config.blurAlgorithm == ConfigEntries.BlurAlgorithm.HYBRID_BLENDING) {
+                if (includeTemporal && config.blurAlgorithm == ConfigEntries.BlurAlgorithm.HYBRID_BLENDING) {
                     applyFrameBlendingInternal();
                 }
             }
