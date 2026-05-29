@@ -24,7 +24,7 @@ import java.util.Set;
 
 public class FrameBlendingManager {
 
-    private static final int MAX_HISTORY = 16;
+    private static final int MAX_HISTORY = 12;
     private static final String MAIN_SAMPLER = "Main";
     private static final String PREV_SAMPLER = "Prev";
 
