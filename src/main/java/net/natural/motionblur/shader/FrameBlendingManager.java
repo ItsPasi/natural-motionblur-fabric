@@ -29,7 +29,7 @@ import java.util.Set;
 public class FrameBlendingManager {
 
     private static final int UBO_SIZE = 16;
-    private static final int MAX_HISTORY = 16;
+    private static final int MAX_HISTORY = 12;
     private static final int UBO_RING_SIZE = 3;
 
     private static final String MAIN_SAMPLER = "Main";

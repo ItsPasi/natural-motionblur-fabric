@@ -18,11 +18,7 @@
         {"sampler_name": "Sample8", "target": "minecraft:main"},
         {"sampler_name": "Sample9", "target": "minecraft:main"},
         {"sampler_name": "Sample10", "target": "minecraft:main"},
-        {"sampler_name": "Sample11", "target": "minecraft:main"},
-        {"sampler_name": "Sample12", "target": "minecraft:main"},
-        {"sampler_name": "Sample13", "target": "minecraft:main"},
-        {"sampler_name": "Sample14", "target": "minecraft:main"},
-        {"sampler_name": "Sample15", "target": "minecraft:main"}
+        {"sampler_name": "Sample11", "target": "minecraft:main"}
       ],
       "output": "swap",
       "uniforms": {
