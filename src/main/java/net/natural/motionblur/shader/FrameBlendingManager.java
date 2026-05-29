@@ -21,6 +21,7 @@ import net.natural.motionblur.mixin.ShaderManagerAccessor;
 import net.natural.motionblur.util.ManagedUniformBuffer;
 import org.jspecify.annotations.NonNull;
 
+import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -28,7 +29,8 @@ import java.util.Set;
 
 public class FrameBlendingManager {
 
-    private static final int UBO_SIZE = 16;
+    private static final int FRAME_BLEND_UBO_SIZE = 64;
+    private static final int ACCUM_UBO_SIZE = 16;
     private static final int MAX_HISTORY = 12;
     private static final int UBO_RING_SIZE = 3;
 
@@ -47,20 +49,22 @@ public class FrameBlendingManager {
     }
 
     private static PostChain cachedCombineChain = null;
-    private static final ManagedUniformBuffer.Ring combineUBORing = new ManagedUniformBuffer.Ring(FRAME_BLEND_UBO, UBO_SIZE, UBO_RING_SIZE);
+    private static final ManagedUniformBuffer.Ring combineUBORing = new ManagedUniformBuffer.Ring(FRAME_BLEND_UBO, FRAME_BLEND_UBO_SIZE, UBO_RING_SIZE);
 
     private static final RenderTarget[] historyTargets = new RenderTarget[MAX_HISTORY];
     private static final MutableTextureInput[] historyInputs = new MutableTextureInput[MAX_HISTORY];
+    private static final double[] historyTimestamps = new double[MAX_HISTORY];
+    private static final int[] weightedHistoryIndices = new int[MAX_HISTORY];
+    private static final float[] weightedHistoryWeights = new float[MAX_HISTORY];
     private static int historyWriteIndex = 0;
     private static int historyFilled     = 0;
 
-    private static int   lockedN        = 1;
     private static float smoothedFPS    = 0;
 
     // Accumulation MAX/MIX
     private static PostChain cachedAccumMaxChain = null;
     private static PostChain cachedAccumMixChain = null;
-    private static final ManagedUniformBuffer accumSimpleUBO = new ManagedUniformBuffer(ACCUM_UBO, UBO_SIZE);
+    private static final ManagedUniformBuffer accumSimpleUBO = new ManagedUniformBuffer(ACCUM_UBO, ACCUM_UBO_SIZE);
     private static RenderTarget accumReadTarget  = null;
     private static RenderTarget accumWriteTarget = null;
     private static MutableTextureInput injectedMainInput = null;
@@ -75,11 +79,9 @@ public class FrameBlendingManager {
     public static void applyFrameBlending(GraphicsResourceAllocator allocator, float fps, int refreshRate) {
         Minecraft client = Minecraft.getInstance();
         RenderTarget main = client.getMainRenderTarget();
-        updateLockedWindowSize(fps, refreshRate);
+        updateSmoothedFPS(fps);
 
-        // If the dynamic window is one frame, the frame-blend pass would not add any visible blending.
-        // Avoid the full-frame history copy and sampler/UBO work in that case.
-        if (lockedN <= 1) {
+        if (refreshRate <= 0) {
             historyWriteIndex = 0;
             historyFilled = 0;
             return;
@@ -87,13 +89,13 @@ public class FrameBlendingManager {
 
         ensureTargets(main.width, main.height);
 
-        pushHistoryFrame(main);
-        int sampleCount = Math.min(historyFilled, lockedN);
+        double now = currentTimeSeconds();
+        pushHistoryFrame(main, now);
+
+        int sampleCount = buildWeightedSampleList(now, refreshRate, smoothedFPS);
         if (sampleCount <= 1) {
             return;
         }
-
-        int oldestIndex = oldestHistoryIndex(sampleCount);
 
         PostChain combineChain = loadFrameBlendChain(client);
         if (combineChain == null) return;
@@ -105,12 +107,12 @@ public class FrameBlendingManager {
         GpuBuffer combineUBO = combineUBORing.putNext(combineChain, combineUniforms, FRAME_BLEND_UBO);
 
         try {
-            writeBlendParamsUBO(combineUBO, 1.0f / sampleCount, sampleCount);
+            writeBlendParamsUBO(combineUBO, inverseTotalWeight(sampleCount), sampleCount);
 
-            RenderTarget fallback = historyTargets[oldestIndex];
+            RenderTarget fallback = historyTargets[weightedHistoryIndices[sampleCount - 1]];
             for (int i = 0; i < MAX_HISTORY; i++) {
                 RenderTarget target = (i < sampleCount)
-                        ? historyTargets[(oldestIndex + i) % MAX_HISTORY]
+                        ? historyTargets[weightedHistoryIndices[i]]
                         : fallback;
                 MutableTextureInput input = historyInputs[i];
                 if (input == null) {
@@ -144,6 +146,7 @@ public class FrameBlendingManager {
                 historyTargets[i] = null;
             }
             historyInputs[i] = null;
+            historyTimestamps[i] = 0.0;
         }
         if (accumReadTarget != null) {
             accumReadTarget.destroyBuffers();
@@ -159,8 +162,9 @@ public class FrameBlendingManager {
         targetH = 0;
         historyWriteIndex = 0;
         historyFilled = 0;
-        lockedN = 1;
         smoothedFPS = 0;
+        Arrays.fill(weightedHistoryIndices, 0);
+        Arrays.fill(weightedHistoryWeights, 0.0f);
         cachedCombineChain = null;
         cachedAccumMaxChain = null;
         cachedAccumMixChain = null;
@@ -170,30 +174,69 @@ public class FrameBlendingManager {
         loadErrorLogged.clear();
     }
 
-    private static void updateLockedWindowSize(float fps, int refreshRate) {
+    private static void updateSmoothedFPS(float fps) {
         if (fps > 0.0f) {
             smoothedFPS = (smoothedFPS <= 0.0f) ? fps : smoothedFPS * 0.85f + fps * 0.15f;
         }
-
-        int desired = 1;
-        if (smoothedFPS > 0.0f && refreshRate > 0) {
-            desired = Math.clamp(Math.round(smoothedFPS / refreshRate), 1, MAX_HISTORY);
-        }
-
-        lockedN = desired;
     }
 
-    private static void pushHistoryFrame(RenderTarget src) {
+    private static void pushHistoryFrame(RenderTarget src, double timestamp) {
         if (historyTargets[historyWriteIndex] == null) return;
         copyTexture(src, historyTargets[historyWriteIndex]);
+        historyTimestamps[historyWriteIndex] = timestamp;
         historyWriteIndex = (historyWriteIndex + 1) % MAX_HISTORY;
         if (historyFilled < MAX_HISTORY) historyFilled++;
     }
 
-    private static int oldestHistoryIndex(int sampleCount) {
-        int idx = historyWriteIndex - sampleCount;
-        if (idx < 0) idx += MAX_HISTORY;
-        return idx;
+    private static int buildWeightedSampleList(double exposureEnd, int refreshRate, float fps) {
+        Arrays.fill(weightedHistoryWeights, 0.0f);
+        if (historyFilled <= 0) return 0;
+
+        double exposureStart = exposureEnd - (1.0 / refreshRate);
+        double estimatedFrameTime = (fps > 0.0f) ? 1.0 / fps : 1.0 / refreshRate;
+        double totalWeight = 0.0;
+        int sampleCount = 0;
+        int firstIndex = historyWriteIndex - historyFilled;
+        if (firstIndex < 0) firstIndex += MAX_HISTORY;
+
+        for (int i = 0; i < historyFilled; i++) {
+            int idx = (firstIndex + i) % MAX_HISTORY;
+            double frameEnd = historyTimestamps[idx];
+            if (frameEnd <= 0.0) continue;
+
+            double frameStart;
+            if (i > 0) {
+                int prevIdx = (firstIndex + i - 1) % MAX_HISTORY;
+                frameStart = historyTimestamps[prevIdx];
+            } else {
+                frameStart = frameEnd - estimatedFrameTime;
+            }
+            if (frameStart >= frameEnd) frameStart = frameEnd - estimatedFrameTime;
+
+            double overlap = Math.min(frameEnd, exposureEnd) - Math.max(frameStart, exposureStart);
+            if (overlap > 0.0000001) {
+                weightedHistoryIndices[sampleCount] = idx;
+                weightedHistoryWeights[sampleCount] = (float)overlap;
+                totalWeight += overlap;
+                sampleCount++;
+            }
+        }
+
+        if (sampleCount <= 0) return 0;
+        if (totalWeight <= 0.0000001) return 0;
+        return sampleCount;
+    }
+
+    private static float inverseTotalWeight(int sampleCount) {
+        float totalWeight = 0.0f;
+        for (int i = 0; i < sampleCount; i++) {
+            totalWeight += weightedHistoryWeights[i];
+        }
+        return totalWeight > 0.0f ? 1.0f / totalWeight : 1.0f;
+    }
+
+    private static double currentTimeSeconds() {
+        return System.nanoTime() * 1.0E-9;
     }
 
     // Accumulation MAX/MIX
@@ -285,6 +328,7 @@ public class FrameBlendingManager {
             if (historyTargets[i] != null) historyTargets[i].destroyBuffers();
             historyTargets[i] = new MainTarget(w, h);
             historyInputs[i] = null;
+            historyTimestamps[i] = 0.0;
         }
         if (accumReadTarget != null) accumReadTarget.destroyBuffers();
         if (accumWriteTarget != null) accumWriteTarget.destroyBuffers();
@@ -294,6 +338,8 @@ public class FrameBlendingManager {
         targetH = h;
         historyWriteIndex = 0;
         historyFilled = 0;
+        Arrays.fill(weightedHistoryIndices, 0);
+        Arrays.fill(weightedHistoryWeights, 0.0f);
         injectedMainInput = null;
         injectedPrevInput = null;
         accumHasPrevious = false;
@@ -307,11 +353,15 @@ public class FrameBlendingManager {
 
     private static void copyTexture(RenderTarget src, RenderTarget dst) {
         if (src == null || dst == null) return;
-        assert src.getColorTexture() != null;
-        assert dst.getColorTexture() != null;
-        RenderSystem.getDevice().createCommandEncoder().copyTextureToTexture(
-                src.getColorTexture(), dst.getColorTexture(),
-                0, 0, 0, 0, 0, dst.width, dst.height);
+        try {
+            if (src.getColorTexture() == null || dst.getColorTexture() == null) return;
+            RenderSystem.getDevice().createCommandEncoder().copyTextureToTexture(
+                    src.getColorTexture(), dst.getColorTexture(),
+                    0, 0, 0, 0, 0,
+                    Math.min(src.width, dst.width), Math.min(src.height, dst.height));
+        } catch (Exception e) {
+            System.err.println("[NaturalMotionBlur] copyTexture failed: " + e.getMessage());
+        }
     }
 
     private static PostPass firstPass(PostChain chain) {
@@ -340,14 +390,17 @@ public class FrameBlendingManager {
         }
     }
 
-    private static void writeBlendParamsUBO(GpuBuffer ubo, float invSampleCount, int sampleCount) {
+    private static void writeBlendParamsUBO(GpuBuffer ubo, float invTotalWeight, int sampleCount) {
         try (GpuBuffer.MappedView view = RenderSystem.getDevice().createCommandEncoder()
                 .mapBuffer(ubo, false, true)) {
             Std140Builder b = Std140Builder.intoBuffer(view.data());
-            b.putFloat(invSampleCount);
+            b.putFloat(invTotalWeight);
             b.putInt(sampleCount);
-            b.putInt(0);
-            b.putInt(0);
+            for (int i = 0; i < MAX_HISTORY; i++) {
+                b.putFloat(i < sampleCount ? weightedHistoryWeights[i] : 0.0f);
+            }
+            b.putFloat(0.0f);
+            b.putFloat(0.0f);
         }
     }
 

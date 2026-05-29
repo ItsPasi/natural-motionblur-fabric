@@ -14,10 +14,22 @@ uniform sampler2D Sample10Sampler;
 uniform sampler2D Sample11Sampler;
 
 layout(std140) uniform FrameBlendParamsUniforms {
-    float invSampleCount;
+    float invTotalWeight;
     int   activeCount;
-    int   padding1;
-    int   padding2;
+    float Sample0Weight;
+    float Sample1Weight;
+    float Sample2Weight;
+    float Sample3Weight;
+    float Sample4Weight;
+    float Sample5Weight;
+    float Sample6Weight;
+    float Sample7Weight;
+    float Sample8Weight;
+    float Sample9Weight;
+    float Sample10Weight;
+    float Sample11Weight;
+    float padding0;
+    float padding1;
 };
 
 in vec2 texCoord;
@@ -49,11 +61,30 @@ vec3 loadSampleLinear(int index) {
     }
 }
 
+float loadSampleWeight(int index) {
+    switch (index) {
+        case 0: return Sample0Weight;
+        case 1: return Sample1Weight;
+        case 2: return Sample2Weight;
+        case 3: return Sample3Weight;
+        case 4: return Sample4Weight;
+        case 5: return Sample5Weight;
+        case 6: return Sample6Weight;
+        case 7: return Sample7Weight;
+        case 8: return Sample8Weight;
+        case 9: return Sample9Weight;
+        case 10: return Sample10Weight;
+        case 11: return Sample11Weight;
+        default: return 0.0;
+    }
+}
+
 void main() {
     vec3 accumLinear = vec3(0.0);
-    for (int i = 0; i < 16; i++) {
+    for (int i = 0; i < 12; i++) {
         if (i >= activeCount) break;
-        accumLinear += loadSampleLinear(i);
+        float weight = loadSampleWeight(i);
+        accumLinear += loadSampleLinear(i) * weight;
     }
-    color = vec4(linearToSrgb(accumLinear * invSampleCount), 1.0);
+    color = vec4(linearToSrgb(accumLinear * invTotalWeight), 1.0);
 }
