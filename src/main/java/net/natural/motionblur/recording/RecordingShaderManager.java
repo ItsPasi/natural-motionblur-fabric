@@ -31,7 +31,7 @@ public class RecordingShaderManager {
 
     private static final int SCALAR_UBO_SIZE = 16;
     private static final int CURSOR_UBO_SIZE = 32;
-    private static final int MAX_HISTORY = 16;
+    private static final int MAX_HISTORY = 12;
     private static final int UBO_RING_SIZE = 3;
 
     private static final String FRAME_BLEND_UBO = "FrameBlendParamsUniforms";
