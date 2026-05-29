@@ -8,6 +8,10 @@ uniform sampler2D Sample4Sampler;
 uniform sampler2D Sample5Sampler;
 uniform sampler2D Sample6Sampler;
 uniform sampler2D Sample7Sampler;
+uniform sampler2D Sample8Sampler;
+uniform sampler2D Sample9Sampler;
+uniform sampler2D Sample10Sampler;
+uniform sampler2D Sample11Sampler;
 
 layout(std140) uniform FrameBlendParamsUniforms {
     float invSampleCount;
@@ -37,13 +41,17 @@ vec3 loadSampleLinear(int index) {
         case 5: return srgbToLinear(texture(Sample5Sampler, texCoord).rgb);
         case 6: return srgbToLinear(texture(Sample6Sampler, texCoord).rgb);
         case 7: return srgbToLinear(texture(Sample7Sampler, texCoord).rgb);
+        case 8: return srgbToLinear(texture(Sample8Sampler, texCoord).rgb);
+        case 9: return srgbToLinear(texture(Sample9Sampler, texCoord).rgb);
+        case 10: return srgbToLinear(texture(Sample10Sampler, texCoord).rgb);
+        case 11: return srgbToLinear(texture(Sample11Sampler, texCoord).rgb);
         default: return vec3(0.0);
     }
 }
 
 void main() {
     vec3 accumLinear = vec3(0.0);
-    for (int i = 0; i < 8; i++) {
+    for (int i = 0; i < 12; i++) {
         if (i >= activeCount) break;
         accumLinear += loadSampleLinear(i);
     }
