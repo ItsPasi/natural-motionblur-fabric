@@ -17,6 +17,7 @@ import net.natural.motionblur.mixin.PostChainAccessor;
 import net.natural.motionblur.mixin.PostPassAccessor;
 import net.natural.motionblur.mixin.ShaderManagerAccessor;
 
+import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -36,10 +37,11 @@ public class FrameBlendingManager {
     // Frame blending history
     private static final RenderTarget[] historyTargets = new RenderTarget[MAX_HISTORY];
     private static final MutableTextureInput[] historyInputs = new MutableTextureInput[MAX_HISTORY];
+    private static final double[] historyTimestamps = new double[MAX_HISTORY];
+    private static final int[] weightedHistoryIndices = new int[MAX_HISTORY];
+    private static final float[] weightedHistoryWeights = new float[MAX_HISTORY];
     private static int historyWriteIndex = 0;
     private static int historyFilled     = 0;
-
-    private static int   lockedN        = 1;
     private static float smoothedFPS    = 0;
 
     // Accumulation
@@ -64,9 +66,9 @@ public class FrameBlendingManager {
     public static void applyFrameBlending(GraphicsResourceAllocator allocator, float fps, int refreshRate) {
         Minecraft client = Minecraft.getInstance();
         RenderTarget main = client.getMainRenderTarget();
-        updateLockedWindowSize(fps, refreshRate);
+        updateSmoothedFPS(fps);
 
-        if (lockedN <= 1) {
+        if (refreshRate <= 0) {
             historyWriteIndex = 0;
             historyFilled = 0;
             return;
@@ -74,8 +76,10 @@ public class FrameBlendingManager {
 
         ensureTargets(main.width, main.height);
 
-        pushHistoryFrame(main);
-        int sampleCount = Math.min(historyFilled, lockedN);
+        double now = currentTimeSeconds();
+        pushHistoryFrame(main, now);
+
+        int sampleCount = buildWeightedSampleList(now, refreshRate, smoothedFPS);
         if (sampleCount <= 1) return;
 
         PostChain chain = loadChain(client, "frame_blending");
@@ -84,11 +88,10 @@ public class FrameBlendingManager {
         PostPass pass = firstPass(chain);
         if (pass == null) return;
 
-        int oldestIndex = oldestHistoryIndex(sampleCount);
-        RenderTarget fallback = historyTargets[oldestIndex];
+        RenderTarget fallback = historyTargets[weightedHistoryIndices[sampleCount - 1]];
         for (int i = 0; i < MAX_HISTORY; i++) {
             RenderTarget src = (i < sampleCount)
-                    ? historyTargets[(oldestIndex + i) % MAX_HISTORY]
+                    ? historyTargets[weightedHistoryIndices[i]]
                     : fallback;
             MutableTextureInput input = historyInputs[i];
             if (input == null) {
@@ -100,10 +103,11 @@ public class FrameBlendingManager {
             setSampler(pass, SAMPLE_NAMES[i], input);
         }
 
-        float invSampleCount = 1.0f / sampleCount;
+        float invTotalWeight = inverseTotalWeight(sampleCount);
         chain.process(main, allocator, (RenderPass rp) -> {
-            trySetUniform(rp, "invSampleCount", new float[]{invSampleCount});
+            trySetUniform(rp, "invTotalWeight", new float[]{invTotalWeight});
             trySetUniform(rp, new int[]{sampleCount});
+            setSampleWeightUniforms(rp, sampleCount);
         });
     }
 
@@ -122,6 +126,7 @@ public class FrameBlendingManager {
                 historyTargets[i] = null;
             }
             historyInputs[i] = null;
+            historyTimestamps[i] = 0.0;
         }
         if (accumReadTarget != null) {
             accumReadTarget.destroyBuffers();
@@ -135,8 +140,9 @@ public class FrameBlendingManager {
         targetH = 0;
         historyWriteIndex = 0;
         historyFilled = 0;
-        lockedN = 1;
         smoothedFPS = 0;
+        Arrays.fill(weightedHistoryIndices, 0);
+        Arrays.fill(weightedHistoryWeights, 0.0f);
         mainInput = null;
         prevInput = null;
         accumHasPrevious = false;
@@ -193,28 +199,69 @@ public class FrameBlendingManager {
 
     // History management
 
-    private static void pushHistoryFrame(RenderTarget src) {
+    private static void pushHistoryFrame(RenderTarget src, double timestamp) {
         if (historyTargets[historyWriteIndex] == null) return;
         copyFramebuffer(src, historyTargets[historyWriteIndex]);
+        historyTimestamps[historyWriteIndex] = timestamp;
         historyWriteIndex = (historyWriteIndex + 1) % MAX_HISTORY;
         if (historyFilled < MAX_HISTORY) historyFilled++;
     }
 
-    private static int oldestHistoryIndex(int sampleCount) {
-        int idx = historyWriteIndex - sampleCount;
-        if (idx < 0) idx += MAX_HISTORY;
-        return idx;
-    }
-
-    private static void updateLockedWindowSize(float fps, int refreshRate) {
+    private static void updateSmoothedFPS(float fps) {
         if (fps > 0.0f) {
             smoothedFPS = (smoothedFPS <= 0.0f) ? fps : smoothedFPS * 0.85f + fps * 0.15f;
         }
-        int desired = 1;
-        if (smoothedFPS > 0.0f && refreshRate > 0) {
-            desired = Math.clamp(Math.round(smoothedFPS / refreshRate), 1, MAX_HISTORY);
+    }
+
+    private static int buildWeightedSampleList(double exposureEnd, int refreshRate, float fps) {
+        Arrays.fill(weightedHistoryWeights, 0.0f);
+        if (historyFilled <= 0) return 0;
+
+        double exposureStart = exposureEnd - (1.0 / refreshRate);
+        double estimatedFrameTime = (fps > 0.0f) ? 1.0 / fps : 1.0 / refreshRate;
+        double totalWeight = 0.0;
+        int sampleCount = 0;
+        int firstIndex = historyWriteIndex - historyFilled;
+        if (firstIndex < 0) firstIndex += MAX_HISTORY;
+
+        for (int i = 0; i < historyFilled; i++) {
+            int idx = (firstIndex + i) % MAX_HISTORY;
+            double frameEnd = historyTimestamps[idx];
+            if (frameEnd <= 0.0) continue;
+
+            double frameStart;
+            if (i > 0) {
+                int prevIdx = (firstIndex + i - 1) % MAX_HISTORY;
+                frameStart = historyTimestamps[prevIdx];
+            } else {
+                frameStart = frameEnd - estimatedFrameTime;
+            }
+            if (frameStart >= frameEnd) frameStart = frameEnd - estimatedFrameTime;
+
+            double overlap = Math.min(frameEnd, exposureEnd) - Math.max(frameStart, exposureStart);
+            if (overlap > 0.0000001) {
+                weightedHistoryIndices[sampleCount] = idx;
+                weightedHistoryWeights[sampleCount] = (float)overlap;
+                totalWeight += overlap;
+                sampleCount++;
+            }
         }
-        lockedN = desired;
+
+        if (sampleCount <= 0) return 0;
+        if (totalWeight <= 0.0000001) return 0;
+        return sampleCount;
+    }
+
+    private static float inverseTotalWeight(int sampleCount) {
+        float totalWeight = 0.0f;
+        for (int i = 0; i < sampleCount; i++) {
+            totalWeight += weightedHistoryWeights[i];
+        }
+        return totalWeight > 0.0f ? 1.0f / totalWeight : 1.0f;
+    }
+
+    private static double currentTimeSeconds() {
+        return System.nanoTime() * 1.0E-9;
     }
 
     // Targets & copying
@@ -225,6 +272,7 @@ public class FrameBlendingManager {
             if (historyTargets[i] != null) historyTargets[i].destroyBuffers();
             historyTargets[i] = new MainTarget(w, h);
             historyInputs[i] = null;
+            historyTimestamps[i] = 0.0;
         }
         if (accumReadTarget != null) accumReadTarget.destroyBuffers();
         if (accumWriteTarget != null) accumWriteTarget.destroyBuffers();
@@ -331,6 +379,14 @@ public class FrameBlendingManager {
     }
 
     // Uniform helpers
+
+
+    private static void setSampleWeightUniforms(RenderPass pass, int sampleCount) {
+        for (int i = 0; i < MAX_HISTORY; i++) {
+            float weight = i < sampleCount ? FrameBlendingManager.weightedHistoryWeights[i] : 0.0f;
+            trySetUniform(pass, SAMPLE_NAMES[i] + "Weight", new float[]{weight});
+        }
+    }
 
     private static void trySetUniform(RenderPass pass, String name, float[] values) {
         try { pass.setUniform(name, values); } catch (Exception ignored) {}

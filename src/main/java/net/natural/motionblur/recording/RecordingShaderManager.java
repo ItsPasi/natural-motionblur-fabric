@@ -28,6 +28,7 @@ import org.lwjgl.opengl.GL30;
 import java.lang.reflect.Field;
 import java.nio.ByteBuffer;
 import java.lang.reflect.Method;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 
@@ -44,6 +45,9 @@ public class RecordingShaderManager {
     private static RenderTarget cleanFrameTarget = null;
     private static final RenderTarget[] recHistoryTargets = new RenderTarget[MAX_HISTORY];
     private static final MutableTextureInput[] recHistoryInputs = new MutableTextureInput[MAX_HISTORY];
+    private static final double[] recHistoryTimestamps = new double[MAX_HISTORY];
+    private static final int[] recWeightedHistoryIndices = new int[MAX_HISTORY];
+    private static final float[] recWeightedHistoryWeights = new float[MAX_HISTORY];
     private static final int[] changedSamplerIndices = new int[MAX_HISTORY];
     private static final PostPass.Input[] savedSamplerInputs = new PostPass.Input[MAX_HISTORY];
     private static int lastW = 0;
@@ -58,7 +62,6 @@ public class RecordingShaderManager {
     private static boolean recHasFirstFrame        = false;
     private static int     recHistoryWriteIndex    = 0;
     private static int     recHistoryFilled        = 0;
-    private static int     recLockedN              = 1;
     private static float   recSmoothedFPS          = 0;
 
     // Cursor overlay
@@ -444,24 +447,23 @@ public class RecordingShaderManager {
     private static void applyIsolatedFrameBlending(RenderTarget main, float fps,
                                                    int refreshRate) {
         Minecraft mc = Minecraft.getInstance();
-        updateLockedWindowSize(fps, refreshRate);
+        updateSmoothedFPS(fps);
 
-        if (recLockedN <= 1) {
+        if (refreshRate <= 0) {
             recHistoryWriteIndex = 0;
             recHistoryFilled = 0;
             recHasFirstFrame = true;
             return;
         }
 
-        pushHistoryFrame(main);
+        double now = currentTimeSeconds();
+        pushHistoryFrame(main, now);
 
-        int sampleCount = Math.min(recHistoryFilled, recLockedN);
+        int sampleCount = buildWeightedSampleList(now, refreshRate, recSmoothedFPS);
         if (sampleCount <= 1) {
             recHasFirstFrame = true;
             return;
         }
-
-        int oldestIndex = oldestHistoryIndex(sampleCount);
 
         recCombineChain = loadChain(mc, "frame_blending_recording");
         if (recCombineChain == null) { recHasFirstFrame = true; return; }
@@ -469,12 +471,12 @@ public class RecordingShaderManager {
         PostPass pass = firstPass(recCombineChain);
         if (pass == null) { recHasFirstFrame = true; return; }
 
-        RenderTarget fallback = recHistoryTargets[oldestIndex];
+        RenderTarget fallback = recHistoryTargets[recWeightedHistoryIndices[sampleCount - 1]];
         List<PostPass.Input> inputs = ((PostPassAccessor) pass).getInputs();
         int changedCount = 0;
         for (int i = 0; i < MAX_HISTORY; i++) {
             RenderTarget src = (i < sampleCount)
-                    ? recHistoryTargets[(oldestIndex + i) % MAX_HISTORY]
+                    ? recHistoryTargets[recWeightedHistoryIndices[i]]
                     : fallback;
             int idx = findSamplerIndex(inputs, SAMPLE_NAMES[i]);
             if (idx >= 0) {
@@ -493,10 +495,11 @@ public class RecordingShaderManager {
         }
 
         try {
-            float invSC = 1.0f / sampleCount;
+            float invTotalWeight = inverseTotalWeight(sampleCount);
             recCombineChain.process(main, savedAllocator, (RenderPass rp) -> {
-                trySetUniform(rp, "invSampleCount", new float[]{invSC});
+                trySetUniform(rp, "invTotalWeight", new float[]{invTotalWeight});
                 trySetUniform(rp, new int[]{sampleCount});
+                setSampleWeightUniforms(rp, sampleCount);
             });
         } finally {
             for (int i = 0; i < changedCount; i++) {
@@ -510,28 +513,69 @@ public class RecordingShaderManager {
 
     // History management
 
-    private static void updateLockedWindowSize(float fps, int refreshRate) {
+    private static void updateSmoothedFPS(float fps) {
         if (fps > 0.0f) {
             recSmoothedFPS = (recSmoothedFPS <= 0.0f) ? fps : recSmoothedFPS * 0.85f + fps * 0.15f;
         }
-        int desired = 1;
-        if (recSmoothedFPS > 0.0f && refreshRate > 0) {
-            desired = Math.clamp(Math.round(recSmoothedFPS / refreshRate), 1, MAX_HISTORY);
-        }
-        recLockedN = desired;
     }
 
-    private static void pushHistoryFrame(RenderTarget src) {
+    private static void pushHistoryFrame(RenderTarget src, double timestamp) {
         if (recHistoryTargets[recHistoryWriteIndex] == null) return;
         copyFramebuffer(src, recHistoryTargets[recHistoryWriteIndex]);
+        recHistoryTimestamps[recHistoryWriteIndex] = timestamp;
         recHistoryWriteIndex = (recHistoryWriteIndex + 1) % MAX_HISTORY;
         if (recHistoryFilled < MAX_HISTORY) recHistoryFilled++;
     }
 
-    private static int oldestHistoryIndex(int sampleCount) {
-        int idx = recHistoryWriteIndex - sampleCount;
-        if (idx < 0) idx += MAX_HISTORY;
-        return idx;
+    private static int buildWeightedSampleList(double exposureEnd, int refreshRate, float fps) {
+        Arrays.fill(recWeightedHistoryWeights, 0.0f);
+        if (recHistoryFilled <= 0) return 0;
+
+        double exposureStart = exposureEnd - (1.0 / refreshRate);
+        double estimatedFrameTime = (fps > 0.0f) ? 1.0 / fps : 1.0 / refreshRate;
+        double totalWeight = 0.0;
+        int sampleCount = 0;
+        int firstIndex = recHistoryWriteIndex - recHistoryFilled;
+        if (firstIndex < 0) firstIndex += MAX_HISTORY;
+
+        for (int i = 0; i < recHistoryFilled; i++) {
+            int idx = (firstIndex + i) % MAX_HISTORY;
+            double frameEnd = recHistoryTimestamps[idx];
+            if (frameEnd <= 0.0) continue;
+
+            double frameStart;
+            if (i > 0) {
+                int prevIdx = (firstIndex + i - 1) % MAX_HISTORY;
+                frameStart = recHistoryTimestamps[prevIdx];
+            } else {
+                frameStart = frameEnd - estimatedFrameTime;
+            }
+            if (frameStart >= frameEnd) frameStart = frameEnd - estimatedFrameTime;
+
+            double overlap = Math.min(frameEnd, exposureEnd) - Math.max(frameStart, exposureStart);
+            if (overlap > 0.0000001) {
+                recWeightedHistoryIndices[sampleCount] = idx;
+                recWeightedHistoryWeights[sampleCount] = (float)overlap;
+                totalWeight += overlap;
+                sampleCount++;
+            }
+        }
+
+        if (sampleCount <= 0) return 0;
+        if (totalWeight <= 0.0000001) return 0;
+        return sampleCount;
+    }
+
+    private static float inverseTotalWeight(int sampleCount) {
+        float totalWeight = 0.0f;
+        for (int i = 0; i < sampleCount; i++) {
+            totalWeight += recWeightedHistoryWeights[i];
+        }
+        return totalWeight > 0.0f ? 1.0f / totalWeight : 1.0f;
+    }
+
+    private static double currentTimeSeconds() {
+        return System.nanoTime() * 1.0E-9;
     }
 
     // Targets & copying
@@ -543,6 +587,7 @@ public class RecordingShaderManager {
         invalidateFrameBlending();
         for (int i = 0; i < recHistoryTargets.length; i++) {
             recHistoryTargets[i] = new MainTarget(w, h);
+            recHistoryTimestamps[i] = 0.0;
         }
         lastW = w;
         lastH = h;
@@ -555,6 +600,7 @@ public class RecordingShaderManager {
                 recHistoryTargets[i] = null;
             }
             recHistoryInputs[i] = null;
+            recHistoryTimestamps[i] = 0.0;
             savedSamplerInputs[i] = null;
         }
         recCombineChain = null;
@@ -563,8 +609,9 @@ public class RecordingShaderManager {
         recHasFirstFrame = false;
         recHistoryWriteIndex = 0;
         recHistoryFilled = 0;
-        recLockedN = 1;
         recSmoothedFPS = 0.0f;
+        Arrays.fill(recWeightedHistoryIndices, 0);
+        Arrays.fill(recWeightedHistoryWeights, 0.0f);
         recPrevRawCursorVisible = false;
     }
 
@@ -699,6 +746,14 @@ public class RecordingShaderManager {
     }
 
     // Uniform helpers
+
+
+    private static void setSampleWeightUniforms(RenderPass pass, int sampleCount) {
+        for (int i = 0; i < MAX_HISTORY; i++) {
+            float weight = i < sampleCount ? RecordingShaderManager.recWeightedHistoryWeights[i] : 0.0f;
+            trySetUniform(pass, SAMPLE_NAMES[i] + "Weight", new float[]{weight});
+        }
+    }
 
     private static void trySetUniform(RenderPass pass, String name, float[] values) {
         try { pass.setUniform(name, values); } catch (Exception ignored) {}

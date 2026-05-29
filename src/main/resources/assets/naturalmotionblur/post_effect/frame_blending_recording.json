@@ -14,12 +14,27 @@
         {"sampler_name": "Sample4", "target": "minecraft:main"},
         {"sampler_name": "Sample5", "target": "minecraft:main"},
         {"sampler_name": "Sample6", "target": "minecraft:main"},
-        {"sampler_name": "Sample7", "target": "minecraft:main"}
+        {"sampler_name": "Sample7", "target": "minecraft:main"},
+        {"sampler_name": "Sample8", "target": "minecraft:main"},
+        {"sampler_name": "Sample9", "target": "minecraft:main"},
+        {"sampler_name": "Sample10", "target": "minecraft:main"},
+        {"sampler_name": "Sample11", "target": "minecraft:main"}
       ],
       "output": "swap",
       "uniforms": [
-        {"name": "invSampleCount", "type": "float", "value": [1.0]},
-        {"name": "activeCount",    "type": "int",   "value": [1]}
+        {"name": "invTotalWeight", "type": "float", "value": [1.0]},
+        {"name": "activeCount", "type": "int", "value": [1]},
+        {"name": "Sample0Weight", "type": "float", "value": [1.0]},
+        {"name": "Sample1Weight", "type": "float", "value": [0.0]},
+        {"name": "Sample2Weight", "type": "float", "value": [0.0]},
+        {"name": "Sample3Weight", "type": "float", "value": [0.0]},
+        {"name": "Sample4Weight", "type": "float", "value": [0.0]},
+        {"name": "Sample5Weight", "type": "float", "value": [0.0]},
+        {"name": "Sample6Weight", "type": "float", "value": [0.0]},
+        {"name": "Sample7Weight", "type": "float", "value": [0.0]},
+        {"name": "Sample8Weight", "type": "float", "value": [0.0]},
+        {"name": "Sample9Weight", "type": "float", "value": [0.0]},
+        {"name": "Sample10Weight", "type": "float", "value": [0.0]}, {"name": "Sample11Weight", "type": "float", "value": [0.0]}
       ]
     },
     {

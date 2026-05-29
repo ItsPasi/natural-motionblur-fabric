@@ -13,8 +13,20 @@ uniform sampler2D Sample9Sampler;
 uniform sampler2D Sample10Sampler;
 uniform sampler2D Sample11Sampler;
 
-uniform float invSampleCount;
+uniform float invTotalWeight;
 uniform int   activeCount;
+uniform float Sample0Weight;
+uniform float Sample1Weight;
+uniform float Sample2Weight;
+uniform float Sample3Weight;
+uniform float Sample4Weight;
+uniform float Sample5Weight;
+uniform float Sample6Weight;
+uniform float Sample7Weight;
+uniform float Sample8Weight;
+uniform float Sample9Weight;
+uniform float Sample10Weight;
+uniform float Sample11Weight;
 
 in vec2 texCoord;
 layout(location = 0) out vec4 color;
@@ -45,11 +57,30 @@ vec3 loadSampleLinear(int index) {
     }
 }
 
+float loadSampleWeight(int index) {
+    switch (index) {
+        case 0: return Sample0Weight;
+        case 1: return Sample1Weight;
+        case 2: return Sample2Weight;
+        case 3: return Sample3Weight;
+        case 4: return Sample4Weight;
+        case 5: return Sample5Weight;
+        case 6: return Sample6Weight;
+        case 7: return Sample7Weight;
+        case 8: return Sample8Weight;
+        case 9: return Sample9Weight;
+        case 10: return Sample10Weight;
+        case 11: return Sample11Weight;
+        default: return 0.0;
+    }
+}
+
 void main() {
     vec3 accumLinear = vec3(0.0);
-    for (int i = 0; i < 16; i++) {
+    for (int i = 0; i < 12; i++) {
         if (i >= activeCount) break;
-        accumLinear += loadSampleLinear(i);
+        float weight = loadSampleWeight(i);
+        accumLinear += loadSampleLinear(i) * weight;
     }
-    color = vec4(linearToSrgb(accumLinear * invSampleCount), 1.0);
+    color = vec4(linearToSrgb(accumLinear * invTotalWeight), 1.0);
 }
