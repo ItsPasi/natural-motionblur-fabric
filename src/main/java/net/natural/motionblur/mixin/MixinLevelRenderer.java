@@ -32,6 +32,7 @@ public class MixinLevelRenderer {
     @Unique private final Matrix4f scratchModelView  = new Matrix4f();
     @Unique private final Matrix4f scratchProjection = new Matrix4f();
     @Unique private double prevCamX, prevCamY, prevCamZ;
+    @Unique private boolean previousFrameReady = false;
 
     @Inject(method = "renderLevel", at = @At("HEAD"))
     private void onRenderHead(
@@ -46,8 +47,13 @@ public class MixinLevelRenderer {
         boolean recordingActive = config.recordingOverlayEnabled;
         boolean needsVelocityState = blurActive && config.usesVelocityBlur();
 
+        double cx = cameraState.pos.x();
+        double cy = cameraState.pos.y();
+        double cz = cameraState.pos.z();
+
         if (!blurActive && !recordingActive) {
             ShaderManager.clearFrameAllocator();
+            naturalMotionBlur$rememberCurrentFrameState(modelViewMatrix, cameraState.projectionMatrix, cx, cy, cz);
             return;
         }
 
@@ -61,16 +67,21 @@ public class MixinLevelRenderer {
         }
         ShaderManager.beginFrame();
 
-        double cx = cameraState.pos.x();
-        double cy = cameraState.pos.y();
-        double cz = cameraState.pos.z();
-
         if (!needsVelocityState) {
-            prevModelView.set(modelViewMatrix);
-            prevProjection.set(cameraState.projectionMatrix);
-            prevCamX = cx;
-            prevCamY = cy;
-            prevCamZ = cz;
+            naturalMotionBlur$rememberCurrentFrameState(modelViewMatrix, cameraState.projectionMatrix, cx, cy, cz);
+            return;
+        }
+
+        scratchModelView.set(modelViewMatrix);
+        scratchProjection.set(cameraState.projectionMatrix);
+
+        if (!previousFrameReady) {
+            ShaderManager.setFrameMotionBlur(
+                    scratchModelView, scratchModelView,
+                    scratchProjection, scratchProjection,
+                    0.0f, 0.0f, 0.0f);
+
+            naturalMotionBlur$rememberCurrentFrameState(scratchModelView, scratchProjection, cx, cy, cz);
             return;
         }
 
@@ -78,19 +89,23 @@ public class MixinLevelRenderer {
         float dy = (float)(cy - prevCamY);
         float dz = (float)(cz - prevCamZ);
 
-        scratchModelView.set(modelViewMatrix);
-        scratchProjection.set(cameraState.projectionMatrix);
-
         ShaderManager.setFrameMotionBlur(
                 scratchModelView, prevModelView,
                 scratchProjection, prevProjection,
                 dx, dy, dz);
 
-        prevModelView.set(scratchModelView);
-        prevProjection.set(scratchProjection);
+        naturalMotionBlur$rememberCurrentFrameState(scratchModelView, scratchProjection, cx, cy, cz);
+    }
+
+
+    @Unique
+    private void naturalMotionBlur$rememberCurrentFrameState(Matrix4fc modelViewMatrix, Matrix4fc projectionMatrix, double cx, double cy, double cz) {
+        prevModelView.set(modelViewMatrix);
+        prevProjection.set(projectionMatrix);
         prevCamX = cx;
         prevCamY = cy;
         prevCamZ = cz;
+        previousFrameReady = true;
     }
 
     // Apply pre-entity blur.
