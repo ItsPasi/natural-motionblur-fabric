@@ -24,8 +24,7 @@ import java.util.Set;
 
 public class FrameBlendingManager {
 
-    private static final int MAX_HISTORY = 8;
-
+    private static final int MAX_HISTORY = 16;
     private static final String MAIN_SAMPLER = "Main";
     private static final String PREV_SAMPLER = "Prev";
 
@@ -213,7 +212,7 @@ public class FrameBlendingManager {
         }
         int desired = 1;
         if (smoothedFPS > 0.0f && refreshRate > 0) {
-            desired = Math.clamp((int) Math.ceil(smoothedFPS / refreshRate), 1, MAX_HISTORY);
+            desired = Math.clamp(Math.round(smoothedFPS / refreshRate), 1, MAX_HISTORY);
         }
         lockedN = desired;
     }

@@ -33,8 +33,7 @@ import java.util.Map;
 
 public class RecordingShaderManager {
 
-    private static final int MAX_HISTORY = 8;
-
+    private static final int MAX_HISTORY = 16;
     private static final String[] SAMPLE_NAMES = new String[MAX_HISTORY];
     static {
         for (int i = 0; i < MAX_HISTORY; i++) SAMPLE_NAMES[i] = "Sample" + i;
