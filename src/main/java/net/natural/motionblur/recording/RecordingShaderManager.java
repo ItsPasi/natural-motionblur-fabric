@@ -30,12 +30,13 @@ import org.lwjgl.opengl.GL30;
 
 import java.nio.ByteBuffer;
 import java.lang.reflect.Field;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 
 public class RecordingShaderManager {
 
-    private static final int SCALAR_UBO_SIZE = 16;
+    private static final int FRAME_BLEND_UBO_SIZE = 64;
     private static final int CURSOR_UBO_SIZE = 32;
     private static final int MAX_HISTORY = 12;
     private static final int UBO_RING_SIZE = 3;
@@ -54,6 +55,9 @@ public class RecordingShaderManager {
     private static RenderTarget cleanFrameTarget = null;
     private static final RenderTarget[] recHistoryTargets = new RenderTarget[MAX_HISTORY];
     private static final MutableTextureInput[] recHistoryInputs = new MutableTextureInput[MAX_HISTORY];
+    private static final double[] recHistoryTimestamps = new double[MAX_HISTORY];
+    private static final int[] recWeightedHistoryIndices = new int[MAX_HISTORY];
+    private static final float[] recWeightedHistoryWeights = new float[MAX_HISTORY];
     private static final PostPass.Input[] savedSamplerScratch = new PostPass.Input[MAX_HISTORY];
     private static int lastW = 0;
     private static int lastH = 0;
@@ -75,7 +79,6 @@ public class RecordingShaderManager {
 
     private static int     recHistoryWriteIndex    = 0;
     private static int     recHistoryFilled        = 0;
-    private static int     recLockedN              = 1;
     private static float   recSmoothedFPS          = 0;
     private static float   recPrevRawCursorX       = 0;
     private static float   recPrevRawCursorY       = 0;
@@ -225,24 +228,23 @@ public class RecordingShaderManager {
     private static void applyIsolatedFrameBlending(RenderTarget main, float fps,
                                                    int refreshRate, int w, int h) {
         Minecraft mc = Minecraft.getInstance();
-        updateLockedWindowSize(fps, refreshRate);
+        updateSmoothedFPS(fps);
 
         applyCursorOverlay(main, mc, w, h);
 
-        if (recLockedN <= 1) {
+        if (refreshRate <= 0) {
             recHistoryWriteIndex = 0;
             recHistoryFilled = 0;
             return;
         }
 
-        pushHistoryFrame(main);
+        double now = currentTimeSeconds();
+        pushHistoryFrame(main, now);
 
-        int sampleCount = Math.min(recHistoryFilled, recLockedN);
+        int sampleCount = buildWeightedSampleList(now, refreshRate, recSmoothedFPS);
         if (sampleCount <= 1) {
             return;
         }
-
-        int oldestIndex = oldestHistoryIndex(sampleCount);
 
         recCombineChain = loadChain(mc, recCombineChain, "frame_blending");
         if (recCombineChain == null) { return; }
@@ -255,13 +257,13 @@ public class RecordingShaderManager {
 
         GpuBuffer recCombineUBO = nextRecCombineUBO();
         GpuBuffer savedCombineUBO = combineUniforms.put(FRAME_BLEND_UBO, recCombineUBO);
-        writeBlendParamsUBO(recCombineUBO, 1.0f / sampleCount, sampleCount);
+        writeBlendParamsUBO(recCombineUBO, inverseTotalWeight(sampleCount), sampleCount);
 
-        RenderTarget fallback = recHistoryTargets[oldestIndex];
+        RenderTarget fallback = recHistoryTargets[recWeightedHistoryIndices[sampleCount - 1]];
         try {
             for (int i = 0; i < MAX_HISTORY; i++) {
                 RenderTarget target = (i < sampleCount)
-                        ? recHistoryTargets[(oldestIndex + i) % MAX_HISTORY]
+                        ? recHistoryTargets[recWeightedHistoryIndices[i]]
                         : fallback;
                 MutableTextureInput input = recHistoryInputs[i];
                 if (input == null) {
@@ -285,30 +287,69 @@ public class RecordingShaderManager {
         }
     }
 
-    private static void updateLockedWindowSize(float fps, int refreshRate) {
+    private static void updateSmoothedFPS(float fps) {
         if (fps > 0.0f) {
             recSmoothedFPS = (recSmoothedFPS <= 0.0f) ? fps : recSmoothedFPS * 0.85f + fps * 0.15f;
         }
-
-        int desired = 1;
-        if (recSmoothedFPS > 0.0f && refreshRate > 0) {
-            desired = Math.clamp(Math.round(recSmoothedFPS / refreshRate), 1, MAX_HISTORY);
-        }
-
-        recLockedN = desired;
     }
 
-    private static void pushHistoryFrame(RenderTarget src) {
+    private static void pushHistoryFrame(RenderTarget src, double timestamp) {
         if (recHistoryTargets[recHistoryWriteIndex] == null) return;
         copyTexture(src, recHistoryTargets[recHistoryWriteIndex]);
+        recHistoryTimestamps[recHistoryWriteIndex] = timestamp;
         recHistoryWriteIndex = (recHistoryWriteIndex + 1) % MAX_HISTORY;
         if (recHistoryFilled < MAX_HISTORY) recHistoryFilled++;
     }
 
-    private static int oldestHistoryIndex(int sampleCount) {
-        int idx = recHistoryWriteIndex - sampleCount;
-        if (idx < 0) idx += MAX_HISTORY;
-        return idx;
+    private static int buildWeightedSampleList(double exposureEnd, int refreshRate, float fps) {
+        Arrays.fill(recWeightedHistoryWeights, 0.0f);
+        if (recHistoryFilled <= 0) return 0;
+
+        double exposureStart = exposureEnd - (1.0 / refreshRate);
+        double estimatedFrameTime = (fps > 0.0f) ? 1.0 / fps : 1.0 / refreshRate;
+        double totalWeight = 0.0;
+        int sampleCount = 0;
+        int firstIndex = recHistoryWriteIndex - recHistoryFilled;
+        if (firstIndex < 0) firstIndex += MAX_HISTORY;
+
+        for (int i = 0; i < recHistoryFilled; i++) {
+            int idx = (firstIndex + i) % MAX_HISTORY;
+            double frameEnd = recHistoryTimestamps[idx];
+            if (frameEnd <= 0.0) continue;
+
+            double frameStart;
+            if (i > 0) {
+                int prevIdx = (firstIndex + i - 1) % MAX_HISTORY;
+                frameStart = recHistoryTimestamps[prevIdx];
+            } else {
+                frameStart = frameEnd - estimatedFrameTime;
+            }
+            if (frameStart >= frameEnd) frameStart = frameEnd - estimatedFrameTime;
+
+            double overlap = Math.min(frameEnd, exposureEnd) - Math.max(frameStart, exposureStart);
+            if (overlap > 0.0000001) {
+                recWeightedHistoryIndices[sampleCount] = idx;
+                recWeightedHistoryWeights[sampleCount] = (float)overlap;
+                totalWeight += overlap;
+                sampleCount++;
+            }
+        }
+
+        if (sampleCount <= 0) return 0;
+        if (totalWeight <= 0.0000001) return 0;
+        return sampleCount;
+    }
+
+    private static float inverseTotalWeight(int sampleCount) {
+        float totalWeight = 0.0f;
+        for (int i = 0; i < sampleCount; i++) {
+            totalWeight += recWeightedHistoryWeights[i];
+        }
+        return totalWeight > 0.0f ? 1.0f / totalWeight : 1.0f;
+    }
+
+    private static double currentTimeSeconds() {
+        return System.nanoTime() * 1.0E-9;
     }
 
     private static void applyCursorOverlay(RenderTarget target, Minecraft mc, int w, int h) {
@@ -457,6 +498,7 @@ public class RecordingShaderManager {
                 recHistoryTargets[i] = null;
             }
             recHistoryInputs[i] = null;
+            recHistoryTimestamps[i] = 0.0;
             savedSamplerScratch[i] = null;
         }
         for (int i = 0; i < recCombineUBORing.length; i++) {
@@ -474,8 +516,9 @@ public class RecordingShaderManager {
         recCursorTextureInput = null;
         recHistoryWriteIndex = 0;
         recHistoryFilled = 0;
-        recLockedN = 1;
         recSmoothedFPS = 0.0f;
+        Arrays.fill(recWeightedHistoryIndices, 0);
+        Arrays.fill(recWeightedHistoryWeights, 0.0f);
         recPrevRawCursorVisible = false;
         recCombineUBOIndex = 0;
     }
@@ -501,6 +544,7 @@ public class RecordingShaderManager {
         invalidateFrameBlending();
         for (int i = 0; i < recHistoryTargets.length; i++) {
             recHistoryTargets[i] = new MainTarget(w, h);
+            recHistoryTimestamps[i] = 0.0;
         }
         lastW = w;
         lastH = h;
@@ -530,7 +574,7 @@ public class RecordingShaderManager {
     private static GpuBuffer nextRecCombineUBO() {
         GpuBuffer ubo = recCombineUBORing[recCombineUBOIndex];
         if (ubo == null) {
-            ubo = GpuBufferUtil.createUBO(REC_FRAME_BLEND_UBO, SCALAR_UBO_SIZE);
+            ubo = GpuBufferUtil.createUBO(REC_FRAME_BLEND_UBO, FRAME_BLEND_UBO_SIZE);
             recCombineUBORing[recCombineUBOIndex] = ubo;
         }
         recCombineUBOIndex = (recCombineUBOIndex + 1) % UBO_RING_SIZE;
@@ -584,14 +628,17 @@ public class RecordingShaderManager {
         return passes.isEmpty() ? null : passes.getFirst();
     }
 
-    private static void writeBlendParamsUBO(GpuBuffer ubo, float invSampleCount, int sampleCount) {
+    private static void writeBlendParamsUBO(GpuBuffer ubo, float invTotalWeight, int sampleCount) {
         try (GpuBuffer.MappedView view = RenderSystem.getDevice().createCommandEncoder()
                 .mapBuffer(ubo, false, true)) {
             Std140Builder b = Std140Builder.intoBuffer(view.data());
-            b.putFloat(invSampleCount);
+            b.putFloat(invTotalWeight);
             b.putInt(sampleCount);
-            b.putInt(0);
-            b.putInt(0);
+            for (int i = 0; i < MAX_HISTORY; i++) {
+                b.putFloat(i < sampleCount ? recWeightedHistoryWeights[i] : 0.0f);
+            }
+            b.putFloat(0.0f);
+            b.putFloat(0.0f);
         }
     }
 
