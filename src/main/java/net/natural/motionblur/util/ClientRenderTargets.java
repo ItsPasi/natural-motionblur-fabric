@@ -18,7 +18,7 @@ public final class ClientRenderTargets {
 
     private ClientRenderTargets() {}
 
-    public static RenderTarget main(Minecraft client) {
+    public static RenderTarget getMain(Minecraft client) {
         RenderTarget target = tryGameRenderer(client);
         if (target != null) return target;
 

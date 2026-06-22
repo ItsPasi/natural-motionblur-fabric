@@ -36,7 +36,7 @@ public final class ManagedUniformBuffer {
     }
 
     public boolean resetIfClosed(RuntimeException e) {
-        if (!GpuBufferUtil.isClosedBufferException(e)) return false;
+        if (GpuBufferUtil.isNotClosedBufferException(e)) return false;
         reset();
         return true;
     }
@@ -86,7 +86,7 @@ public final class ManagedUniformBuffer {
         }
 
         public boolean resetIfClosed(RuntimeException e) {
-            if (!GpuBufferUtil.isClosedBufferException(e)) return false;
+            if (GpuBufferUtil.isNotClosedBufferException(e)) return false;
             reset();
             return true;
         }

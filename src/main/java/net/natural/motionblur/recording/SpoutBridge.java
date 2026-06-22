@@ -33,25 +33,25 @@ public final class SpoutBridge {
     public static void sendTexture(int textureId, int width, int height) {
         if (textureId == 0 || width <= 0 || height <= 0) return;
         if (!ensureLoaded()) return;
-        if (!ensureSender(width, height)) return;
-
-        nSendTexture(textureId, GL11.GL_TEXTURE_2D, width, height, true);
+        if (ensureSender(width, height)) {
+            nSendTexture(textureId, GL11.GL_TEXTURE_2D, width, height, true);
+        }
     }
 
     public static boolean sendImage(java.nio.ByteBuffer pixels, int width, int height, int pitch, boolean invert) {
         if (pixels == null || width <= 0 || height <= 0 || pitch <= 0) return false;
         if (!ensureLoaded()) return false;
-        if (!ensureSender(width, height)) return false;
-
-        try {
-            return nSendImage(pixels, width, height, pitch, invert);
-        } catch (UnsatisfiedLinkError e) {
-            if (!warnedMissingImageNative) {
-                warnedMissingImageNative = true;
-                System.err.println("[NMB] Spout bridge is missing nSendImage; using fallback output.");
+        if (ensureSender(width, height)) {
+            try {
+                return nSendImage(pixels, width, height, pitch, invert);
+            } catch (UnsatisfiedLinkError e) {
+                if (!warnedMissingImageNative) {
+                    warnedMissingImageNative = true;
+                    System.err.println("[NMB] Spout bridge is missing nSendImage; using fallback output.");
+                }
             }
-            return false;
         }
+        return false;
     }
 
     public static boolean isAvailable() {
@@ -60,7 +60,8 @@ public final class SpoutBridge {
 
     private static boolean ensureSender(int width, int height) {
         if (!senderOpen) {
-            if (!nCreateSender(SENDER_NAME, width, height)) {
+            boolean created = nCreateSender(SENDER_NAME, width, height);
+            if (!created) {
                 System.err.println("[NMB] Failed to create Spout sender.");
                 return false;
             }
@@ -84,7 +85,8 @@ public final class SpoutBridge {
             senderOpen = false;
             senderWidth = 0;
             senderHeight = 0;
-            if (!nCreateSender(SENDER_NAME, width, height)) {
+            boolean recreated = nCreateSender(SENDER_NAME, width, height);
+            if (!recreated) {
                 System.err.println("[NMB] Failed to recreate Spout sender after resize.");
                 return false;
             }
@@ -127,7 +129,6 @@ public final class SpoutBridge {
                 .resolve("naturalmotionblur")
                 .resolve("natives");
 
-        int bridgeVersion = 0;
         try {
             Files.createDirectories(nativeDir);
 
@@ -143,7 +144,7 @@ public final class SpoutBridge {
             loaded = true;
             System.out.println("[NMB] Spout bridge loaded from " + nativeDir.toAbsolutePath());
             try {
-                bridgeVersion = nBridgeVersion();
+                int bridgeVersion = nBridgeVersion();
                 modernBridge = bridgeVersion >= 37;
                 System.out.println("[NMB] Spout bridge native version: " + bridgeVersion);
                 if (!modernBridge) {
@@ -152,7 +153,6 @@ public final class SpoutBridge {
                     return false;
                 }
             } catch (UnsatisfiedLinkError e) {
-                bridgeVersion = 0;
                 modernBridge = false;
                 loaded = false;
                 System.err.println("[NMB] Spout bridge DLL is missing required exports. Rebuild nmb_spout_bridge.dll before packaging.");
@@ -164,7 +164,6 @@ public final class SpoutBridge {
                     + nativeDir.toAbsolutePath() + ": " + e.getMessage());
             loaded = false;
             modernBridge = false;
-            bridgeVersion = 0;
             return false;
         }
     }

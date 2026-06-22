@@ -41,7 +41,7 @@ public abstract class MixinVulkanBackend {
     private void naturalmotionblur$addExternalSharingExtensionsToVkDevice(Args args) {
         Collection<String> extensions = args.get(0);
         VulkanPhysicalDevice physicalDevice = args.get(1);
-        args.set(0, naturalmotionblur$addExternalSharingExtensions(extensions, physicalDevice, "vkCreateDevice"));
+        args.set(0, naturalmotionblur$addExternalSharingExtensions(extensions, physicalDevice));
     }
 
     @ModifyArgs(
@@ -52,10 +52,10 @@ public abstract class MixinVulkanBackend {
     private void naturalmotionblur$addExternalSharingExtensionsToDeviceInfo(Args args) {
         VulkanPhysicalDevice physicalDevice = args.get(2);
         Set<String> extensions = args.get(3);
-        args.set(3, naturalmotionblur$addExternalSharingExtensions(extensions, physicalDevice, "DeviceInfo"));
+        args.set(3, naturalmotionblur$addExternalSharingExtensions(extensions, physicalDevice));
     }
 
-    @Unique private static Set<String> naturalmotionblur$addExternalSharingExtensions(Collection<String> extensions, VulkanPhysicalDevice physicalDevice, String target) {
+    @Unique private static Set<String> naturalmotionblur$addExternalSharingExtensions(Collection<String> extensions, VulkanPhysicalDevice physicalDevice) {
         Set<String> requested = new HashSet<>(extensions);
         if (!naturalmotionblur$externalSharingEnabled()) {
             if (!loggedDisabled) {

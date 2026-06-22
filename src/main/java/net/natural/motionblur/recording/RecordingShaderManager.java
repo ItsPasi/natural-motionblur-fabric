@@ -91,7 +91,7 @@ public class RecordingShaderManager {
         }
 
         Minecraft mc = Minecraft.getInstance();
-        RenderTarget main = ClientRenderTargets.main(mc);
+        RenderTarget main = ClientRenderTargets.getMain(mc);
         int w = main.width;
         int h = main.height;
         if (w <= 0 || h <= 0) {
@@ -452,6 +452,7 @@ public class RecordingShaderManager {
         recPrevRawCursorVisible = false;
     }
 
+    @SuppressWarnings("unused")
     public static void destroyOnRenderThread() {
         if (isRenderThreadSafe()) {
             destroy();

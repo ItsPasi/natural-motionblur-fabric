@@ -97,13 +97,17 @@ final class VulkanGlSharedSpoutSender {
         } catch (Throwable t) {
             if (!loggedFailure) {
                 loggedFailure = true;
-                System.err.println("[NMB] Vulkan shared Spout path failed; using readback fallback: " + t);
-                t.printStackTrace();
+                System.err.println("[NMB] Vulkan shared Spout path failed; using readback fallback: " + compactError(t));
             }
             disabled = true;
             destroySharedTextures();
             return false;
         }
+    }
+
+    private static String compactError(Throwable t) {
+        String message = t.getMessage();
+        return t.getClass().getSimpleName() + (message != null ? ": " + message : "");
     }
 
     private static VulkanDevice getVulkanDevice() {

@@ -87,9 +87,9 @@ public class ShaderManager {
         if (processor == null) return;
 
         ManagedUniformBuffer ubo = specialSingleBlur ? f5EntityUBO : preEntityUBO;
-        if (!writeUniforms(processor, "PreEntityBlurUniforms", ubo, blur.strength(), (float) screenWidth, (float) screenHeight, algo, blur.sampleAmount())) return;
-
-        processor.addToFrame(frame, screenWidth, screenHeight, targets);
+        if (writeUniforms(processor, "PreEntityBlurUniforms", ubo, blur.strength(), (float) screenWidth, (float) screenHeight, algo, blur.sampleAmount())) {
+            processor.addToFrame(frame, screenWidth, screenHeight, targets);
+        }
     }
 
     public static void applyDeferredTemporalBlur() {
@@ -132,7 +132,7 @@ public class ShaderManager {
                 frameTimer.getFPS(),
                 frameTimer.getRefreshRate(),
                 config.refreshRateScaling && config.allowsRefreshRateScaling());
-        RenderTarget main = ClientRenderTargets.main(client);
+        RenderTarget main = ClientRenderTargets.getMain(client);
         float viewW = main.width;
         float viewH = main.height;
         int   algo  = config.blurAlgorithm.ordinal();
@@ -192,13 +192,13 @@ public class ShaderManager {
     // UBO writing
 
     private static void writeAndRun(PostChain processor, float blendFactor, float viewW, float viewH, int blurAlgorithm, int sampleAmount, Minecraft client) {
-        if (!writeUniforms(processor, "PostRenderBlurUniforms", ShaderManager.postRenderUBO, blendFactor, viewW, viewH, blurAlgorithm, sampleAmount)) return;
-
-        try {
-            processor.process(ClientRenderTargets.main(client), frameAllocator);
-        } catch (RuntimeException e) {
-            if (ShaderManager.postRenderUBO.resetIfClosed(e)) return;
-            throw e;
+        if (writeUniforms(processor, "PostRenderBlurUniforms", ShaderManager.postRenderUBO, blendFactor, viewW, viewH, blurAlgorithm, sampleAmount)) {
+            try {
+                processor.process(ClientRenderTargets.getMain(client), frameAllocator);
+            } catch (RuntimeException e) {
+                if (ShaderManager.postRenderUBO.resetIfClosed(e)) return;
+                throw e;
+            }
         }
     }
 

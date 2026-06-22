@@ -14,7 +14,6 @@ import org.lwjgl.opengl.GL12;
 import java.lang.reflect.Field;
 import java.nio.ByteBuffer;
 import java.util.Locale;
-import java.util.function.Supplier;
 
 // Sends the recording render target to Spout
 public final class SpoutFrameSender {
@@ -154,9 +153,9 @@ public final class SpoutFrameSender {
 
         int usage = GpuBuffer.USAGE_COPY_DST | GpuBuffer.USAGE_MAP_READ | GpuBuffer.USAGE_HINT_CLIENT_STORAGE;
         slot.buffer = RenderSystem.getDevice().createBuffer(
-                (Supplier<String>) () -> "naturalmotionblur:spout_vulkan_readback",
+                () -> "naturalmotionblur:spout_vulkan_readback",
                 usage,
-                (long) size);
+                size);
         slot.bufferSize = size;
     }
 
@@ -265,9 +264,13 @@ public final class SpoutFrameSender {
     private static void warnFailure(Throwable t) {
         if (!warnedFailure) {
             warnedFailure = true;
-            System.err.println("[NMB] Vulkan Spout fallback failed: " + t);
-            t.printStackTrace();
+            System.err.println("[NMB] Vulkan Spout fallback failed: " + compactError(t));
         }
+    }
+
+    private static String compactError(Throwable t) {
+        String message = t.getMessage();
+        return t.getClass().getSimpleName() + (message != null ? ": " + message : "");
     }
 
     public static void shutdown() {
