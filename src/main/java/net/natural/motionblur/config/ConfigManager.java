@@ -150,7 +150,7 @@ public class ConfigManager {
                                         .append(Component.literal("Turn on velocity blur, turn off refresh rate scaling and play at any FPS setting").withStyle(s -> s.withColor(0xFF5555)))))
                                 .binding(false, () -> cfg.recordingOverlayEnabled, newVal -> {
                                     cfg.recordingOverlayEnabled = newVal;
-                                    if (!newVal) RecordingShaderManager.destroy();
+                                    if (!newVal) RecordingShaderManager.pauseOutput();
                                 })
                                 .controller(opt -> BooleanControllerBuilder.create(opt).coloured(true))
                                 .build())
@@ -172,7 +172,7 @@ public class ConfigManager {
     public static void openConfigScreen() {
         var screen = createConfigScreen(null);
         Minecraft.getInstance().schedule(() ->
-                Minecraft.getInstance().setScreen(screen)
+                Minecraft.getInstance().gui.setScreen(screen)
         );
     }
 

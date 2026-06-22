@@ -1,9 +1,11 @@
 package net.natural.motionblur.recording;
 
+import com.mojang.blaze3d.systems.RenderSystem;
 import com.mojang.blaze3d.textures.GpuTexture;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
+import java.util.Locale;
 
 // Extracts the raw OpenGL texture integer ID from a GpuTexture.
 public class GpuTextureHelper {
@@ -12,8 +14,16 @@ public class GpuTextureHelper {
     private static Field   cachedField  = null;
     private static boolean resolved     = false;
     private static boolean failed       = false;
+    private static boolean warnedBackend = false;
 
     public static int getGlId(GpuTexture texture) {
+        if (!isOpenGlBackend()) {
+            if (!warnedBackend) {
+                warnedBackend = true;
+                System.err.println("[NMB] Raw GL Spout texture output is only available on the OpenGL renderer.");
+            }
+            return 0;
+        }
         if (failed) return 0;
         if (!resolved) resolve(texture);
 
@@ -25,6 +35,32 @@ public class GpuTextureHelper {
             failed = true;
         }
         return 0;
+    }
+
+
+    private static boolean isOpenGlBackend() {
+        try {
+            Object device = RenderSystem.getDevice();
+            String name = device.getClass().getName().toLowerCase(Locale.ROOT);
+            Object backend = findBackend(device);
+            if (backend != null) name += " " + backend.getClass().getName().toLowerCase(Locale.ROOT);
+            if (name.contains("vulkan")) return false;
+            return name.contains("opengl") || name.contains("gl");
+        } catch (Throwable ignored) {
+            return false;
+        }
+    }
+
+    private static Object findBackend(Object device) {
+        for (Class<?> c = device.getClass(); c != null; c = c.getSuperclass()) {
+            try {
+                Field field = c.getDeclaredField("backend");
+                field.setAccessible(true);
+                return field.get(device);
+            } catch (Throwable ignored) {
+            }
+        }
+        return null;
     }
 
     private static void resolve(GpuTexture texture) {

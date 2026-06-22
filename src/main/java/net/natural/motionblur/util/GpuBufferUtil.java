@@ -1,14 +1,18 @@
 package net.natural.motionblur.util;
 
 import com.mojang.blaze3d.buffers.GpuBuffer;
+import com.mojang.blaze3d.buffers.Std140Builder;
 import com.mojang.blaze3d.systems.RenderSystem;
+import org.lwjgl.system.MemoryUtil;
 
 import java.lang.reflect.Method;
+import java.nio.ByteBuffer;
+import java.util.function.Consumer;
 import java.util.function.Supplier;
 
 public final class GpuBufferUtil {
 
-    private static final int UBO_USAGE = 130;
+    private static final int UBO_USAGE = GpuBuffer.USAGE_UNIFORM | GpuBuffer.USAGE_COPY_DST;
     private static Method createBufferMethod = null;
     private GpuBufferUtil() {}
 
@@ -24,6 +28,19 @@ public final class GpuBufferUtil {
             throw new RuntimeException("[NMB] No compatible createBuffer found on " + device.getClass(), e);
         } catch (ReflectiveOperationException e) {
             throw new RuntimeException("[NMB] GpuBufferUtil.createUBO failed", e);
+        }
+    }
+
+    public static void writeStd140(GpuBuffer buffer, int sizeBytes, Consumer<Std140Builder> writer) {
+        ByteBuffer data = MemoryUtil.memCalloc(sizeBytes);
+        try {
+            Std140Builder b = Std140Builder.intoBuffer(data);
+            writer.accept(b);
+            data.position(0);
+            data.limit(sizeBytes);
+            RenderSystem.getDevice().createCommandEncoder().writeToBuffer(buffer.slice(0L, sizeBytes), data);
+        } finally {
+            MemoryUtil.memFree(data);
         }
     }
 

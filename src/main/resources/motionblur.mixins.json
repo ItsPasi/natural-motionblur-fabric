@@ -9,9 +9,11 @@
     "PostPassAccessor",
     "PostChainAccessor",
     "ShaderManagerAccessor",
-    "MixinMinecraft"
+    "MixinMinecraft",
+    "GameRendererAccessor",
+    "LevelTargetBundleAccessor",
+    "MixinVulkanBackend"
   ],
-  "client": [],
   "injectors": {
     "defaultRequire": 1
   }

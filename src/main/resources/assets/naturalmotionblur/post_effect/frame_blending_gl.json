@@ -5,7 +5,7 @@
   "passes": [
     {
       "vertex_shader": "minecraft:core/screenquad",
-      "fragment_shader": "naturalmotionblur:post/frame_blending",
+      "fragment_shader": "naturalmotionblur:post/frame_blending_gl",
       "inputs": [
         {"sampler_name": "Sample0", "target": "minecraft:main"},
         {"sampler_name": "Sample1", "target": "minecraft:main"},
@@ -18,19 +18,7 @@
         {"sampler_name": "Sample8", "target": "minecraft:main"},
         {"sampler_name": "Sample9", "target": "minecraft:main"},
         {"sampler_name": "Sample10", "target": "minecraft:main"},
-        {"sampler_name": "Sample11", "target": "minecraft:main"},
-        {"sampler_name": "Sample12", "target": "minecraft:main"},
-        {"sampler_name": "Sample13", "target": "minecraft:main"},
-        {"sampler_name": "Sample14", "target": "minecraft:main"},
-        {"sampler_name": "Sample15", "target": "minecraft:main"},
-        {"sampler_name": "Sample16", "target": "minecraft:main"},
-        {"sampler_name": "Sample17", "target": "minecraft:main"},
-        {"sampler_name": "Sample18", "target": "minecraft:main"},
-        {"sampler_name": "Sample19", "target": "minecraft:main"},
-        {"sampler_name": "Sample20", "target": "minecraft:main"},
-        {"sampler_name": "Sample21", "target": "minecraft:main"},
-        {"sampler_name": "Sample22", "target": "minecraft:main"},
-        {"sampler_name": "Sample23", "target": "minecraft:main"}
+        {"sampler_name": "Sample11", "target": "minecraft:main"}
       ],
       "output": "swap",
       "uniforms": {
@@ -70,12 +58,24 @@
       "vertex_shader": "minecraft:core/screenquad",
       "fragment_shader": "minecraft:post/blit",
       "inputs": [
-        {"sampler_name": "In", "target": "swap"}
+        {
+          "sampler_name": "In",
+          "target": "swap"
+        }
       ],
       "output": "minecraft:main",
       "uniforms": {
         "BlitConfig": [
-          {"name": "ColorModulate", "type": "vec4", "value": [1, 1, 1, 1]}
+          {
+            "name": "ColorModulate",
+            "type": "vec4",
+            "value": [
+              1,
+              1,
+              1,
+              1
+            ]
+          }
         ]
       }
     }

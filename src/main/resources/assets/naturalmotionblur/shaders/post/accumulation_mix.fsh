@@ -11,9 +11,7 @@ layout(std140) uniform AccumulationUniforms {
 };
 
 in vec2 texCoord;
-in vec2 oneTexel;
-uniform vec2 InSize;
-out vec4 fragColor;
+layout(location = 0) out vec4 fragColor;
 
 void main() {
     vec3 curr = texture(MainSampler, texCoord).rgb;

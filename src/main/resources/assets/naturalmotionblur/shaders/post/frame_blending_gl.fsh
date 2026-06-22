@@ -12,18 +12,6 @@ uniform sampler2D Sample8Sampler;
 uniform sampler2D Sample9Sampler;
 uniform sampler2D Sample10Sampler;
 uniform sampler2D Sample11Sampler;
-uniform sampler2D Sample12Sampler;
-uniform sampler2D Sample13Sampler;
-uniform sampler2D Sample14Sampler;
-uniform sampler2D Sample15Sampler;
-uniform sampler2D Sample16Sampler;
-uniform sampler2D Sample17Sampler;
-uniform sampler2D Sample18Sampler;
-uniform sampler2D Sample19Sampler;
-uniform sampler2D Sample20Sampler;
-uniform sampler2D Sample21Sampler;
-uniform sampler2D Sample22Sampler;
-uniform sampler2D Sample23Sampler;
 
 layout(std140) uniform FrameBlendParamsUniforms {
     float invTotalWeight;
@@ -81,18 +69,6 @@ vec3 loadSampleLinear(int index) {
         case 9: return srgbToLinear(texture(Sample9Sampler, texCoord).rgb);
         case 10: return srgbToLinear(texture(Sample10Sampler, texCoord).rgb);
         case 11: return srgbToLinear(texture(Sample11Sampler, texCoord).rgb);
-        case 12: return srgbToLinear(texture(Sample12Sampler, texCoord).rgb);
-        case 13: return srgbToLinear(texture(Sample13Sampler, texCoord).rgb);
-        case 14: return srgbToLinear(texture(Sample14Sampler, texCoord).rgb);
-        case 15: return srgbToLinear(texture(Sample15Sampler, texCoord).rgb);
-        case 16: return srgbToLinear(texture(Sample16Sampler, texCoord).rgb);
-        case 17: return srgbToLinear(texture(Sample17Sampler, texCoord).rgb);
-        case 18: return srgbToLinear(texture(Sample18Sampler, texCoord).rgb);
-        case 19: return srgbToLinear(texture(Sample19Sampler, texCoord).rgb);
-        case 20: return srgbToLinear(texture(Sample20Sampler, texCoord).rgb);
-        case 21: return srgbToLinear(texture(Sample21Sampler, texCoord).rgb);
-        case 22: return srgbToLinear(texture(Sample22Sampler, texCoord).rgb);
-        case 23: return srgbToLinear(texture(Sample23Sampler, texCoord).rgb);
         default: return vec3(0.0);
     }
 }
@@ -111,25 +87,13 @@ float loadSampleWeight(int index) {
         case 9: return Sample9Weight;
         case 10: return Sample10Weight;
         case 11: return Sample11Weight;
-        case 12: return Sample12Weight;
-        case 13: return Sample13Weight;
-        case 14: return Sample14Weight;
-        case 15: return Sample15Weight;
-        case 16: return Sample16Weight;
-        case 17: return Sample17Weight;
-        case 18: return Sample18Weight;
-        case 19: return Sample19Weight;
-        case 20: return Sample20Weight;
-        case 21: return Sample21Weight;
-        case 22: return Sample22Weight;
-        case 23: return Sample23Weight;
         default: return 0.0;
     }
 }
 
 void main() {
     vec3 accumLinear = vec3(0.0);
-    for (int i = 0; i < 24; i++) {
+    for (int i = 0; i < 12; i++) {
         if (i >= activeCount) break;
         float weight = loadSampleWeight(i);
         accumLinear += loadSampleLinear(i) * weight;

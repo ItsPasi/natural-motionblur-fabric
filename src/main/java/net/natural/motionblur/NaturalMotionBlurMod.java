@@ -19,7 +19,7 @@ public class NaturalMotionBlurMod implements ClientModInitializer, ModMenuApi {
         CommandManager.registerCommands();
         EventManager.registerEvents();
 
-        Runtime.getRuntime().addShutdownHook(new Thread(RecordingShaderManager::destroy,
+        Runtime.getRuntime().addShutdownHook(new Thread(RecordingShaderManager::destroyFromAnyThread,
                 "nmb-recording-output-cleanup"));
     }
 

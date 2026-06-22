@@ -18,11 +18,11 @@ in vec2 texCoord;
 layout(location = 0) out vec4 color;
 
 vec3 reproject(vec3 screenPos) {
-    vec3 ndc      = screenPos * 2.0 - 1.0;
+    vec3 ndc      = vec3(screenPos.xy * 2.0 - 1.0, screenPos.z);
     vec4 viewPos  = projInverse * vec4(ndc, 1.0);
     vec3 worldPos = (mvInverse * vec4(viewPos.xyz / viewPos.w, 1.0)).xyz + cameraDelta;
     vec4 prevClip = prevProjection * (prevModelView * vec4(worldPos, 1.0));
-    return (prevClip.xyz / prevClip.w) * 0.5 + 0.5;
+    return vec3((prevClip.xy / prevClip.w) * 0.5 + 0.5, prevClip.z / prevClip.w);
 }
 
 vec2 clampLength(vec2 velocity) {
@@ -39,13 +39,13 @@ void main() {
     float depth = texelFetch(MainDepthSampler, texel, 0).x;
 
     // Iris Hand Fix
-    if (depth < 0.56) {color = texture(MainSampler, texCoord); return;}
+    if (depth > 0.56) {color = texture(MainSampler, texCoord); return;}
     // Depth blend inconsistency fix
     float dilatedDepth = depth;
-    dilatedDepth = min(dilatedDepth, texelFetch(MainDepthSampler, texel + ivec2( 1,  0), 0).x);
-    dilatedDepth = min(dilatedDepth, texelFetch(MainDepthSampler, texel + ivec2(-1,  0), 0).x);
-    dilatedDepth = min(dilatedDepth, texelFetch(MainDepthSampler, texel + ivec2( 0,  1), 0).x);
-    dilatedDepth = min(dilatedDepth, texelFetch(MainDepthSampler, texel + ivec2( 0, -1), 0).x);
+    dilatedDepth = max(dilatedDepth, texelFetch(MainDepthSampler, texel + ivec2( 1,  0), 0).x);
+    dilatedDepth = max(dilatedDepth, texelFetch(MainDepthSampler, texel + ivec2(-1,  0), 0).x);
+    dilatedDepth = max(dilatedDepth, texelFetch(MainDepthSampler, texel + ivec2( 0,  1), 0).x);
+    dilatedDepth = max(dilatedDepth, texelFetch(MainDepthSampler, texel + ivec2( 0, -1), 0).x);
 
     vec2 velocity = clampLength(texCoord - reproject(vec3(texCoord, dilatedDepth)).xy);
 

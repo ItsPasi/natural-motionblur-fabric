@@ -1,7 +1,6 @@
 package net.natural.motionblur.shader;
 
 import com.mojang.blaze3d.buffers.GpuBuffer;
-import com.mojang.blaze3d.buffers.Std140Builder;
 import com.mojang.blaze3d.framegraph.FramePass;
 import com.mojang.blaze3d.pipeline.MainTarget;
 import com.mojang.blaze3d.pipeline.RenderTarget;
@@ -18,20 +17,25 @@ import net.natural.motionblur.NaturalMotionBlurMod;
 import net.natural.motionblur.mixin.PostChainAccessor;
 import net.natural.motionblur.mixin.PostPassAccessor;
 import net.natural.motionblur.mixin.ShaderManagerAccessor;
+import net.natural.motionblur.util.ClientRenderTargets;
+import net.natural.motionblur.util.GpuBufferUtil;
 import net.natural.motionblur.util.ManagedUniformBuffer;
 import org.jspecify.annotations.NonNull;
 
+import java.lang.reflect.Field;
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 
 public class FrameBlendingManager {
 
-    private static final int FRAME_BLEND_UBO_SIZE = 64;
+    private static final int FRAME_BLEND_UBO_SIZE = 112;
     private static final int ACCUM_UBO_SIZE = 16;
-    private static final int MAX_HISTORY = 12;
+    private static final int MAX_HISTORY = 24;
+    private static final int GL_HISTORY_LIMIT = 12;
     private static final int UBO_RING_SIZE = 3;
 
     private static final String MAIN_SAMPLER = "Main";
@@ -40,6 +44,7 @@ public class FrameBlendingManager {
     private static final String ACCUM_UBO = "AccumulationUniforms";
 
     private static final Identifier FRAME_BLENDING_ID = Identifier.fromNamespaceAndPath(NaturalMotionBlurMod.ID, "frame_blending");
+    private static final Identifier FRAME_BLENDING_GL_ID = Identifier.fromNamespaceAndPath(NaturalMotionBlurMod.ID, "frame_blending_gl");
     private static final Identifier ACCUMULATION_MAX_ID = Identifier.fromNamespaceAndPath(NaturalMotionBlurMod.ID, "accumulation_max");
     private static final Identifier ACCUMULATION_MIX_ID = Identifier.fromNamespaceAndPath(NaturalMotionBlurMod.ID, "accumulation_mix");
 
@@ -71,14 +76,16 @@ public class FrameBlendingManager {
     private static MutableTextureInput injectedPrevInput = null;
     private static boolean accumHasPrevious = false;
 
-    private static int targetW = 0;
-    private static int targetH = 0;
+    private static int historyW = 0;
+    private static int historyH = 0;
+    private static int accumW = 0;
+    private static int accumH = 0;
 
     private static final Set<String> loadErrorLogged = new HashSet<>();
 
     public static void applyFrameBlending(GraphicsResourceAllocator allocator, float fps, int refreshRate) {
         Minecraft client = Minecraft.getInstance();
-        RenderTarget main = client.getMainRenderTarget();
+        RenderTarget main = ClientRenderTargets.main(client);
         updateSmoothedFPS(fps);
 
         if (refreshRate <= 0) {
@@ -87,17 +94,18 @@ public class FrameBlendingManager {
             return;
         }
 
-        ensureTargets(main.width, main.height);
+        ensureHistoryTargets(main.width, main.height);
 
         double now = currentTimeSeconds();
         pushHistoryFrame(main, now);
 
-        int sampleCount = buildWeightedSampleList(now, refreshRate, smoothedFPS);
+        int activeMaxHistory = activeFrameBlendSampleLimit();
+        int sampleCount = buildWeightedSampleList(now, refreshRate, smoothedFPS, activeMaxHistory);
         if (sampleCount <= 1) {
             return;
         }
 
-        PostChain combineChain = loadFrameBlendChain(client);
+        PostChain combineChain = loadFrameBlendChain(client, activeMaxHistory);
         if (combineChain == null) return;
         PostPass combinePass = firstPass(combineChain);
         if (combinePass == null) return;
@@ -110,7 +118,7 @@ public class FrameBlendingManager {
             writeBlendParamsUBO(combineUBO, inverseTotalWeight(sampleCount), sampleCount);
 
             RenderTarget fallback = historyTargets[weightedHistoryIndices[sampleCount - 1]];
-            for (int i = 0; i < MAX_HISTORY; i++) {
+            for (int i = 0; i < activeMaxHistory; i++) {
                 RenderTarget target = (i < sampleCount)
                         ? historyTargets[weightedHistoryIndices[i]]
                         : fallback;
@@ -158,8 +166,10 @@ public class FrameBlendingManager {
         }
         combineUBORing.reset();
         accumSimpleUBO.reset();
-        targetW = 0;
-        targetH = 0;
+        historyW = 0;
+        historyH = 0;
+        accumW = 0;
+        accumH = 0;
         historyWriteIndex = 0;
         historyFilled = 0;
         smoothedFPS = 0;
@@ -188,7 +198,7 @@ public class FrameBlendingManager {
         if (historyFilled < MAX_HISTORY) historyFilled++;
     }
 
-    private static int buildWeightedSampleList(double exposureEnd, int refreshRate, float fps) {
+    private static int buildWeightedSampleList(double exposureEnd, int refreshRate, float fps, int maxSamples) {
         Arrays.fill(weightedHistoryWeights, 0.0f);
         if (historyFilled <= 0) return 0;
 
@@ -224,6 +234,19 @@ public class FrameBlendingManager {
 
         if (sampleCount <= 0) return 0;
         if (totalWeight <= 0.0000001) return 0;
+
+        if (sampleCount > maxSamples) {
+            int offset = sampleCount - maxSamples;
+            for (int i = 0; i < maxSamples; i++) {
+                weightedHistoryIndices[i] = weightedHistoryIndices[offset + i];
+                weightedHistoryWeights[i] = weightedHistoryWeights[offset + i];
+            }
+            for (int i = maxSamples; i < sampleCount; i++) {
+                weightedHistoryWeights[i] = 0.0f;
+            }
+            sampleCount = maxSamples;
+        }
+
         return sampleCount;
     }
 
@@ -243,8 +266,8 @@ public class FrameBlendingManager {
     private static void applyAccumulationInternal(GraphicsResourceAllocator allocator,
                                                   float strength, String shaderName, boolean isMax) {
         Minecraft client = Minecraft.getInstance();
-        RenderTarget main = client.getMainRenderTarget();
-        ensureTargets(main.width, main.height);
+        RenderTarget main = ClientRenderTargets.main(client);
+        ensureAccumTargets(main.width, main.height);
 
         if (!accumHasPrevious) {
             copyTexture(main, accumReadTarget);
@@ -320,24 +343,30 @@ public class FrameBlendingManager {
         }
     }
 
-    private static void ensureTargets(int w, int h) {
-        if (targetW == w && targetH == h && historyTargets[0] != null && accumReadTarget != null && accumWriteTarget != null) return;
+    private static void ensureHistoryTargets(int w, int h) {
+        if (historyW == w && historyH == h && historyTargets[0] != null) return;
         for (int i = 0; i < historyTargets.length; i++) {
             if (historyTargets[i] != null) historyTargets[i].destroyBuffers();
             historyTargets[i] = new MainTarget(w, h);
             historyInputs[i] = null;
             historyTimestamps[i] = 0.0;
         }
-        if (accumReadTarget != null) accumReadTarget.destroyBuffers();
-        if (accumWriteTarget != null) accumWriteTarget.destroyBuffers();
-        accumReadTarget = new MainTarget(w, h);
-        accumWriteTarget = new MainTarget(w, h);
-        targetW = w;
-        targetH = h;
+        historyW = w;
+        historyH = h;
         historyWriteIndex = 0;
         historyFilled = 0;
         Arrays.fill(weightedHistoryIndices, 0);
         Arrays.fill(weightedHistoryWeights, 0.0f);
+    }
+
+    private static void ensureAccumTargets(int w, int h) {
+        if (accumW == w && accumH == h && accumReadTarget != null && accumWriteTarget != null) return;
+        if (accumReadTarget != null) accumReadTarget.destroyBuffers();
+        if (accumWriteTarget != null) accumWriteTarget.destroyBuffers();
+        accumReadTarget = new MainTarget(w, h);
+        accumWriteTarget = new MainTarget(w, h);
+        accumW = w;
+        accumH = h;
         injectedMainInput = null;
         injectedPrevInput = null;
         accumHasPrevious = false;
@@ -374,20 +403,16 @@ public class FrameBlendingManager {
     }
 
     private static void writeFloatUBO(GpuBuffer ubo, float value) {
-        try (GpuBuffer.MappedView view = RenderSystem.getDevice().createCommandEncoder()
-                .mapBuffer(ubo, false, true)) {
-            Std140Builder b = Std140Builder.intoBuffer(view.data());
+        GpuBufferUtil.writeStd140(ubo, ACCUM_UBO_SIZE, b -> {
             b.putFloat(value);
             b.putInt(0);
             b.putInt(0);
             b.putInt(0);
-        }
+        });
     }
 
     private static void writeBlendParamsUBO(GpuBuffer ubo, float invTotalWeight, int sampleCount) {
-        try (GpuBuffer.MappedView view = RenderSystem.getDevice().createCommandEncoder()
-                .mapBuffer(ubo, false, true)) {
-            Std140Builder b = Std140Builder.intoBuffer(view.data());
+        GpuBufferUtil.writeStd140(ubo, FRAME_BLEND_UBO_SIZE, b -> {
             b.putFloat(invTotalWeight);
             b.putInt(sampleCount);
             for (int i = 0; i < MAX_HISTORY; i++) {
@@ -395,16 +420,16 @@ public class FrameBlendingManager {
             }
             b.putFloat(0.0f);
             b.putFloat(0.0f);
-        }
+        });
     }
 
-    private static PostChain loadFrameBlendChain(Minecraft client) {
+    private static PostChain loadFrameBlendChain(Minecraft client, int activeMaxHistory) {
         try {
             net.minecraft.client.renderer.ShaderManager.CompilationCache cache =
                     ((ShaderManagerAccessor) client.getShaderManager()).getCompilationCache();
             if (cache == null) return null;
 
-            PostChain result = cache.getOrLoadPostChain(FRAME_BLENDING_ID, LevelTargetBundle.MAIN_TARGETS);
+            PostChain result = cache.getOrLoadPostChain(activeMaxHistory <= GL_HISTORY_LIMIT ? FRAME_BLENDING_GL_ID : FRAME_BLENDING_ID, LevelTargetBundle.MAIN_TARGETS);
 
             if (result != cachedCombineChain) {
                 cachedCombineChain = result;
@@ -417,6 +442,35 @@ public class FrameBlendingManager {
                 System.err.println("[NaturalMotionBlur] Failed to load frame_blending shader: " + e.getMessage());
             return null;
         }
+    }
+
+    private static int activeFrameBlendSampleLimit() {
+        return isOpenGlBackend() ? GL_HISTORY_LIMIT : MAX_HISTORY;
+    }
+
+    private static boolean isOpenGlBackend() {
+        try {
+            Object device = RenderSystem.getDevice();
+            String name = device.getClass().getName().toLowerCase(Locale.ROOT);
+            Object backend = findBackend(device);
+            if (backend != null) name += " " + backend.getClass().getName().toLowerCase(Locale.ROOT);
+            if (name.contains("vulkan")) return false;
+            return name.contains("opengl") || name.contains("gl");
+        } catch (Throwable ignored) {
+            return false;
+        }
+    }
+
+    private static Object findBackend(Object device) {
+        for (Class<?> c = device.getClass(); c != null; c = c.getSuperclass()) {
+            try {
+                Field field = c.getDeclaredField("backend");
+                field.setAccessible(true);
+                return field.get(device);
+            } catch (Throwable ignored) {
+            }
+        }
+        return null;
     }
 
     private static class MutableTextureInput implements PostPass.Input {
