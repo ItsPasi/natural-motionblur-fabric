@@ -51,6 +51,7 @@ final class VulkanGlSharedSpoutSender {
     private static final int SHARED_RING_SIZE = 3;
 
     private static boolean disabled = false;
+    private static boolean resourceReloadActive = false;
     private static boolean loggedSuccess = false;
     private static boolean loggedFailure = false;
     private static boolean loggedSemaphoreSync = false;
@@ -74,7 +75,7 @@ final class VulkanGlSharedSpoutSender {
     }
 
     static boolean send(GpuTexture source, int frameWidth, int frameHeight) {
-        if (disabled || !externalSharingEnabled()) return false;
+        if (disabled || resourceReloadActive || !externalSharingEnabled()) return false;
         if (!(source instanceof VulkanGpuTexture vulkanSource)) return false;
         if (frameWidth <= 0 || frameHeight <= 0) return false;
 
@@ -100,7 +101,7 @@ final class VulkanGlSharedSpoutSender {
                 System.err.println("[NMB] Vulkan shared Spout path failed; using readback fallback: " + compactError(t));
             }
             disabled = true;
-            destroySharedTextures();
+            discardSharedTexturesAfterFailure();
             return false;
         }
     }
@@ -441,6 +442,26 @@ final class VulkanGlSharedSpoutSender {
         }
     }
 
+    private static void drainPendingSharedTexturesForPause() {
+        for (int i = 0; i < SHARED_RING_SIZE; i++) {
+            SharedSlot slot = slots[i];
+            if (slot == null || !slot.pending) continue;
+
+            try {
+                waitForVulkanCopyInOpenGl(slot);
+            } catch (Throwable t) {
+                if (!loggedFailure) {
+                    loggedFailure = true;
+                    System.err.println("[NMB] Vulkan shared Spout pause failed; using readback fallback: " + compactError(t));
+                }
+                disabled = true;
+            } finally {
+                slot.pending = false;
+            }
+        }
+        nextDrainSlot = nextQueueSlot;
+    }
+
     private static void waitForVulkanCopyInOpenGl(SharedSlot slot) {
         long previousContext = GLFW.glfwGetCurrentContext();
         GLCapabilities previousCapabilities = currentCapabilitiesOrNull();
@@ -525,6 +546,19 @@ final class VulkanGlSharedSpoutSender {
         discardWithoutRenderThreadCleanup();
     }
 
+    static void discardAfterFailure() {
+        discardSharedTexturesAfterFailure();
+    }
+
+    static void beginResourceReload() {
+        resourceReloadActive = true;
+        drainPendingSharedTexturesForPause();
+    }
+
+    static void endResourceReload() {
+        resourceReloadActive = false;
+    }
+
     static void discardWithoutRenderThreadCleanup() {
         Arrays.fill(slots, null);
         device = null;
@@ -536,9 +570,22 @@ final class VulkanGlSharedSpoutSender {
         nextQueueSlot = 0;
         nextDrainSlot = 0;
         disabled = false;
+        resourceReloadActive = false;
         loggedSuccess = false;
         loggedFailure = false;
         loggedSemaphoreSync = false;
+    }
+
+    private static void discardSharedTexturesAfterFailure() {
+        Arrays.fill(slots, null);
+        device = null;
+        glWindow = 0L;
+        glCapabilities = null;
+        width = 0;
+        height = 0;
+        format = null;
+        nextQueueSlot = 0;
+        nextDrainSlot = 0;
     }
 
     private static void destroySharedTextures() {

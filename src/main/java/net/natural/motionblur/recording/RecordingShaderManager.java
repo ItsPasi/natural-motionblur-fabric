@@ -79,11 +79,37 @@ public class RecordingShaderManager {
     private static long    cachedGlfwHandle        = 0;
     private static boolean glfwHandleResolved      = false;
 
+    private static boolean warnedCaptureFailure    = false;
+    private static long    retryCaptureAfterNanos  = 0L;
+    private static long    pauseCaptureUntilNanos  = 0L;
+    private static boolean resourceReloadActive    = false;
+
     public static void captureAllocator(GraphicsResourceAllocator allocator) {
         savedAllocator = allocator;
     }
 
     public static void captureFinalFrameAndPresent() {
+        long now = System.nanoTime();
+        if (resourceReloadActive || (pauseCaptureUntilNanos > 0L && now < pauseCaptureUntilNanos)) {
+            savedAllocator = null;
+            return;
+        }
+        if (pauseCaptureUntilNanos > 0L) {
+            pauseCaptureUntilNanos = 0L;
+        }
+        if (retryCaptureAfterNanos > 0L && now < retryCaptureAfterNanos) {
+            savedAllocator = null;
+            return;
+        }
+
+        try {
+            captureFinalFrameAndPresentInternal();
+        } catch (Throwable t) {
+            handleCaptureFailure(t);
+        }
+    }
+
+    private static void captureFinalFrameAndPresentInternal() {
         ConfigEntries cfg = ConfigManager.getConfig();
         if (!cfg.recordingOverlayEnabled) {
             savedAllocator = null;
@@ -100,7 +126,9 @@ public class RecordingShaderManager {
         }
 
         if (savedAllocator == null) {
-            captureMenuFrameAndPresent(mc, main, w, h);
+            if (mc.level == null) {
+                captureMenuFrameAndPresent(mc, main, w, h);
+            }
             return;
         }
 
@@ -121,6 +149,27 @@ public class RecordingShaderManager {
         } finally {
             savedAllocator = null;
         }
+    }
+
+    private static void handleCaptureFailure(Throwable t) {
+        savedAllocator = null;
+        retryCaptureAfterNanos = System.nanoTime() + 1_000_000_000L;
+
+        try {
+            SpoutFrameSender.discardAfterFailure();
+        } catch (Throwable ignored) {
+        }
+        discardRecordingStateWithoutRenderCleanup();
+
+        if (!warnedCaptureFailure) {
+            warnedCaptureFailure = true;
+            System.err.println("[NMB] Spout capture was reset after a rendering/resource reload error: " + compactError(t));
+        }
+    }
+
+    private static String compactError(Throwable t) {
+        String message = t.getMessage();
+        return t.getClass().getSimpleName() + (message != null ? ": " + message : "");
     }
 
     private static void captureMenuFrameAndPresent(Minecraft mc, RenderTarget main, int w, int h) {
@@ -318,28 +367,32 @@ public class RecordingShaderManager {
 
         if (recCursorUBO == null) recCursorUBO = GpuBufferUtil.createUBO("CursorOverlayUniforms", CURSOR_UBO_SIZE);
         GpuBuffer savedCursorUBO = cursorUniforms.put("CursorOverlayUniforms", recCursorUBO);
-        writeCursorUBO(recCursorUBO, cursor.x, cursor.y, cursor.scale, prevDrawX, prevDrawY);
+        PostPass.Input savedCursorSampler = null;
 
-        if (recCursorTextureInput == null) {
-            recCursorTextureInput = new ResourceTextureInput("Cursor", CURSOR_TEXTURE_ID);
+        try {
+            writeCursorUBO(recCursorUBO, cursor.x, cursor.y, cursor.scale, prevDrawX, prevDrawY);
+
+            if (recCursorTextureInput == null) {
+                recCursorTextureInput = new ResourceTextureInput("Cursor", CURSOR_TEXTURE_ID);
+            }
+
+            GpuTextureView testView = getTextureView(mc, CURSOR_TEXTURE_ID);
+            if (testView == null) return;
+
+            savedCursorSampler = swapSampler(cursorPass, "Cursor", recCursorTextureInput);
+            recCursorChain.process(target, savedAllocator);
+
+            recPrevRawCursorX = cursor.x;
+            recPrevRawCursorY = cursor.y;
+            recPrevRawCursorVisible = true;
+        } finally {
+            if (savedCursorUBO != null) {
+                cursorUniforms.put("CursorOverlayUniforms", savedCursorUBO);
+            } else {
+                cursorUniforms.remove("CursorOverlayUniforms");
+            }
+            if (savedCursorSampler != null) swapSampler(cursorPass, "Cursor", savedCursorSampler);
         }
-
-        GpuTextureView testView = getTextureView(mc, CURSOR_TEXTURE_ID);
-        if (testView == null) {
-            if (savedCursorUBO != null) cursorUniforms.put("CursorOverlayUniforms", savedCursorUBO);
-            return;
-        }
-
-        PostPass.Input savedCursorSampler = swapSampler(cursorPass, "Cursor", recCursorTextureInput);
-
-        recCursorChain.process(target, savedAllocator);
-
-        recPrevRawCursorX = cursor.x;
-        recPrevRawCursorY = cursor.y;
-        recPrevRawCursorVisible = true;
-
-        if (savedCursorUBO != null) cursorUniforms.put("CursorOverlayUniforms", savedCursorUBO);
-        if (savedCursorSampler != null) swapSampler(cursorPass, "Cursor", savedCursorSampler);
     }
 
     private static void writeCursorUBO(GpuBuffer ubo,
@@ -420,7 +473,7 @@ public class RecordingShaderManager {
     public static void invalidateFrameBlending() {
         for (int i = 0; i < recHistoryTargets.length; i++) {
             if (recHistoryTargets[i] != null) {
-                recHistoryTargets[i].destroyBuffers();
+                destroyTargetBuffers(recHistoryTargets[i]);
                 recHistoryTargets[i] = null;
             }
             recHistoryInputs[i] = null;
@@ -428,6 +481,8 @@ public class RecordingShaderManager {
             savedSamplerScratch[i] = null;
         }
         closeRecCombineUBORing();
+        GpuBufferUtil.closeQuietly(recCursorUBO);
+        recCursorUBO = null;
         recCombineChain = null;
         recCursorChain = null;
         recCursorTextureInput = null;
@@ -441,8 +496,24 @@ public class RecordingShaderManager {
     }
 
 
+    public static void beginResourceReload() {
+        resourceReloadActive = true;
+        pauseOutput();
+        pauseCaptureUntilNanos = Long.MAX_VALUE;
+        SpoutFrameSender.beginResourceReload();
+    }
+
+    public static void endResourceReload() {
+        resourceReloadActive = false;
+        pauseOutput();
+        pauseCaptureUntilNanos = System.nanoTime() + 1_000_000_000L;
+        SpoutFrameSender.endResourceReload();
+    }
+
+
     public static void pauseOutput() {
         savedAllocator = null;
+        retryCaptureAfterNanos = 0L;
         recHasFirstFrame = false;
         recHistoryWriteIndex = 0;
         recHistoryFilled = 0;
@@ -490,11 +561,15 @@ public class RecordingShaderManager {
 
         SpoutFrameSender.shutdown();
         savedAllocator = null;
+        retryCaptureAfterNanos = 0L;
+        pauseCaptureUntilNanos = 0L;
+        resourceReloadActive = false;
+        warnedCaptureFailure = false;
         cachedGlfwHandle = 0;
         glfwHandleResolved = false;
 
-        if (cleanFrameTarget != null) { cleanFrameTarget.destroyBuffers(); cleanFrameTarget = null; }
-        if (recordingTarget != null) { recordingTarget.destroyBuffers(); recordingTarget = null; }
+        if (cleanFrameTarget != null) { destroyTargetBuffers(cleanFrameTarget); cleanFrameTarget = null; }
+        if (recordingTarget != null) { destroyTargetBuffers(recordingTarget); recordingTarget = null; }
         invalidateFrameBlending();
         lastW = 0;
         lastH = 0;
@@ -521,6 +596,7 @@ public class RecordingShaderManager {
             savedSamplerScratch[i] = null;
         }
         Arrays.fill(recCombineUBORing, null);
+        recCursorUBO = null;
         recCombineChain = null;
         recCursorChain = null;
         recCursorTextureInput = null;
@@ -537,8 +613,8 @@ public class RecordingShaderManager {
 
     private static void ensureTargets(int w, int h) {
         if (cleanFrameTarget != null && recordingTarget != null && lastW == w && lastH == h && recHistoryTargets[0] != null) return;
-        if (cleanFrameTarget != null) cleanFrameTarget.destroyBuffers();
-        if (recordingTarget != null) recordingTarget.destroyBuffers();
+        if (cleanFrameTarget != null) destroyTargetBuffers(cleanFrameTarget);
+        if (recordingTarget != null) destroyTargetBuffers(recordingTarget);
         cleanFrameTarget = new MainTarget(w, h);
         recordingTarget = new MainTarget(w, h);
         invalidateFrameBlending();
@@ -550,13 +626,23 @@ public class RecordingShaderManager {
         lastH = h;
     }
 
+    private static void destroyTargetBuffers(RenderTarget target) {
+        try {
+            target.destroyBuffers();
+        } catch (Throwable ignored) {
+        }
+    }
+
     private static void copyTexture(RenderTarget src, RenderTarget dst) {
         if (src == null || dst == null) return;
         assert src.getColorTexture() != null;
         assert dst.getColorTexture() != null;
+        int copyW = Math.min(src.width, dst.width);
+        int copyH = Math.min(src.height, dst.height);
+        if (copyW <= 0 || copyH <= 0) return;
         RenderSystem.getDevice().createCommandEncoder().copyTextureToTexture(
                 src.getColorTexture(), dst.getColorTexture(),
-                0, 0, 0, 0, 0, dst.width, dst.height);
+                0, 0, 0, 0, 0, copyW, copyH);
     }
 
     private static PostPass.Input swapSampler(PostPass pass, String samplerName, PostPass.Input replacement) {
@@ -613,7 +699,7 @@ public class RecordingShaderManager {
     private static void closeRecCombineUBORing() {
         for (int i = 0; i < recCombineUBORing.length; i++) {
             if (recCombineUBORing[i] != null) {
-                recCombineUBORing[i].close();
+                GpuBufferUtil.closeQuietly(recCombineUBORing[i]);
                 recCombineUBORing[i] = null;
             }
         }
@@ -631,7 +717,10 @@ public class RecordingShaderManager {
             if (result != cached) {
                 switch (shaderPath) {
                     case "frame_blending", "frame_blending_gl" -> closeRecCombineUBORing();
-                    case "cursor_overlay" -> recCursorUBO = null;
+                    case "cursor_overlay" -> {
+                        GpuBufferUtil.closeQuietly(recCursorUBO);
+                        recCursorUBO = null;
+                    }
                 }
             }
             return result;

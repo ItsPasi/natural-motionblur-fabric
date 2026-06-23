@@ -24,6 +24,7 @@ public final class SpoutFrameSender {
     private static boolean warnedCpuFallback = false;
     private static boolean warnedFailure = false;
     private static boolean warnedImageFallback = false;
+    private static volatile boolean resourceReloadActive = false;
 
     private static final ReadbackSlot[] readbackSlots = new ReadbackSlot[READBACK_RING_SIZE];
     private static int nextReadbackSlot = 0;
@@ -38,18 +39,23 @@ public final class SpoutFrameSender {
     private SpoutFrameSender() {}
 
     public static void send(RenderTarget target, int width, int height) {
-        if (target == null || width <= 0 || height <= 0) return;
+        if (resourceReloadActive || target == null || width <= 0 || height <= 0) return;
 
-        GpuTexture texture = target.getColorTexture();
-        if (texture == null) return;
+        try {
+            GpuTexture texture = target.getColorTexture();
+            if (texture == null) return;
 
-        if (isOpenGlBackend()) {
-            int glTexId = GpuTextureHelper.getGlId(texture);
-            if (glTexId != 0) SpoutBridge.sendTexture(glTexId, width, height);
-            return;
+            if (isOpenGlBackend()) {
+                int glTexId = GpuTextureHelper.getGlId(texture);
+                if (glTexId != 0) SpoutBridge.sendTexture(glTexId, width, height);
+                return;
+            }
+
+            sendVulkanFrame(texture, width, height);
+        } catch (Throwable t) {
+            warnFailure(t);
+            discardAfterFailure();
         }
-
-        sendVulkanFrame(texture, width, height);
     }
 
     private static void sendVulkanFrame(GpuTexture texture, int width, int height) {
@@ -273,6 +279,31 @@ public final class SpoutFrameSender {
         return t.getClass().getSimpleName() + (message != null ? ": " + message : "");
     }
 
+    public static void discardAfterFailure() {
+        discardReadbackBuffersWithoutClose();
+        spoutTexture = 0;
+        spoutTextureWidth = 0;
+        spoutTextureHeight = 0;
+        glWindow = 0L;
+        glCapabilities = null;
+        VulkanGlSharedSpoutSender.discardAfterFailure();
+        try {
+            SpoutBridge.shutdown();
+        } catch (Throwable ignored) {
+        }
+    }
+
+    public static void beginResourceReload() {
+        resourceReloadActive = true;
+        discardReadbackBuffersWithoutClose();
+        VulkanGlSharedSpoutSender.beginResourceReload();
+    }
+
+    public static void endResourceReload() {
+        resourceReloadActive = false;
+        VulkanGlSharedSpoutSender.endResourceReload();
+    }
+
     public static void shutdown() {
         try {
             shutdownReadbackBuffers();
@@ -280,6 +311,7 @@ public final class SpoutFrameSender {
             warnedCpuFallback = false;
             warnedFailure = false;
             warnedImageFallback = false;
+            resourceReloadActive = false;
             VulkanGlSharedSpoutSender.destroy();
             SpoutBridge.shutdown();
         } catch (Throwable ignored) {
@@ -297,6 +329,7 @@ public final class SpoutFrameSender {
         warnedCpuFallback = false;
         warnedFailure = false;
         warnedImageFallback = false;
+        resourceReloadActive = false;
         VulkanGlSharedSpoutSender.discardWithoutRenderThreadCleanup();
         try {
             SpoutBridge.shutdown();
