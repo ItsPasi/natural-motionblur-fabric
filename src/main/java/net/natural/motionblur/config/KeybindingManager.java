@@ -10,9 +10,9 @@ public class KeybindingManager {
 
     public static void registerKeybindings() {
         toggleKeybinding = KeyMappingHelper.registerKeyMapping(new KeyMapping(
-                "Toggle Natural Motion Blur",
+                "Toggle Motion Blur",
                 InputConstants.Type.KEYSYM,
-                InputConstants.KEY_B,
+                InputConstants.UNKNOWN.getValue(),
                 KeyMapping.Category.MISC
         ));
 
