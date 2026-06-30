@@ -1,7 +1,6 @@
 package net.natural.motionblur;
 
 import com.mojang.blaze3d.buffers.GpuBuffer;
-import com.mojang.blaze3d.framegraph.FrameGraphBuilder;
 import com.mojang.blaze3d.pipeline.RenderTarget;
 import com.mojang.blaze3d.resource.GraphicsResourceAllocator;
 import net.minecraft.client.Minecraft;
@@ -68,29 +67,7 @@ public class ShaderManager {
     }
 
     public static void applyPostRenderVelocityOnly() { if (shouldRun()) applyPostRenderVelocityOnlyInternal(); }
-
-    public static void addPreEntityBlurToFrame(FrameGraphBuilder frame, int screenWidth, int screenHeight, LevelTargetBundle targets, boolean specialSingleBlur) {
-        if (frameAllocator == null || !shouldRun()) return;
-
-        ConfigEntries config = ConfigManager.getConfig();
-        if (!config.usesVelocityBlur()) return;
-
-        Minecraft client = Minecraft.getInstance();
-        BlurStrengthCalculator.Result blur = strengthCalc.calculate(
-                config.getEffectiveMotionBlurStrength(),
-                frameTimer.getFPS(),
-                frameTimer.getRefreshRate(),
-                config.refreshRateScaling && config.allowsRefreshRateScaling());
-        int algo = config.blurAlgorithm.ordinal();
-
-        PostChain processor = specialSingleBlur ? getF5Processor(client) : getPreProcessor(client);
-        if (processor == null) return;
-
-        ManagedUniformBuffer ubo = specialSingleBlur ? f5EntityUBO : preEntityUBO;
-        if (writeUniforms(processor, "PreEntityBlurUniforms", ubo, blur.strength(), (float) screenWidth, (float) screenHeight, algo, blur.sampleAmount())) {
-            processor.addToFrame(frame, screenWidth, screenHeight, targets);
-        }
-    }
+    public static void applyPreEntityVelocityOnly(boolean specialSingleBlur) { if (shouldRun()) applyPreEntityVelocityOnlyInternal(specialSingleBlur); }
 
     public static void applyDeferredTemporalBlur() {
         if (deferredTemporalBlurApplied || frameAllocator == null || !shouldRun()) return;
@@ -118,6 +95,35 @@ public class ShaderManager {
     private static boolean shouldRun() {
         ConfigEntries config = ConfigManager.getConfig();
         return config.enabled && config.getEffectiveMotionBlurStrength() != 0;
+    }
+
+    private static void applyPreEntityVelocityOnlyInternal(boolean specialSingleBlur) {
+        if (frameAllocator == null) return;
+
+        ConfigEntries config = ConfigManager.getConfig();
+        if (!config.usesVelocityBlur()) {return;}
+
+        Minecraft client = Minecraft.getInstance();
+        BlurStrengthCalculator.Result blur = strengthCalc.calculate(
+                config.getEffectiveMotionBlurStrength(),
+                frameTimer.getFPS(),
+                frameTimer.getRefreshRate(),
+                config.refreshRateScaling && config.allowsRefreshRateScaling());
+        RenderTarget main = ClientRenderTargets.getMain(client);
+        float viewW = main.width;
+        float viewH = main.height;
+        int   algo  = config.blurAlgorithm.ordinal();
+
+        PostChain processor = specialSingleBlur ? getF5Processor(client) : getPreProcessor(client);
+        ManagedUniformBuffer ubo = specialSingleBlur ? f5EntityUBO : preEntityUBO;
+        if (processor != null && writeUniforms(processor, "PreEntityBlurUniforms", ubo, blur.strength(), viewW, viewH, algo, blur.sampleAmount())) {
+            try {
+                processor.process(main, frameAllocator);
+            } catch (RuntimeException e) {
+                if (ubo.resetIfClosed(e)) return;
+                throw e;
+            }
+        }
     }
 
     private static void applyPostRenderVelocityOnlyInternal() {
