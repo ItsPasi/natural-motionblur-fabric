@@ -215,11 +215,9 @@ public class ShaderManager {
         Map<String, GpuBuffer> uniformBuffers = ((PostPassAccessor) passes.getFirst()).getCustomUniforms();
         if (!uniformBuffers.containsKey(uboKey)) return false;
 
-        // Replace the shader loader's placeholder buffer with ours and close the old one
         GpuBuffer ubo = managedUBO.put(processor, uniformBuffers, uboKey);
 
         try {
-            // Write uniforms in std140 order - must match the GLSL block declaration
             GpuBufferUtil.writeStd140(ubo, UBO_SIZE, b -> {
                 b.putMat4f(cameraState.getMvInverse());
                 b.putMat4f(cameraState.getProjInverse());

@@ -2,17 +2,14 @@ package net.natural.motionblur.mixin;
 
 import com.mojang.blaze3d.buffers.GpuBufferSlice;
 import com.mojang.blaze3d.resource.GraphicsResourceAllocator;
-import com.mojang.blaze3d.resource.ResourceHandle;
-import com.mojang.blaze3d.pipeline.RenderTarget;
+import com.mojang.blaze3d.vertex.PoseStack;
 import net.minecraft.client.CameraType;
 import net.minecraft.client.DeltaTracker;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.LevelRenderer;
-import net.minecraft.client.renderer.chunk.ChunkSectionsToRender;
-import net.minecraft.client.renderer.feature.FeatureRenderDispatcher.PreparedFrame;
+import net.minecraft.client.renderer.SubmitNodeCollector;
 import net.minecraft.client.renderer.state.level.CameraRenderState;
 import net.minecraft.client.renderer.state.level.LevelRenderState;
-import net.minecraft.util.profiling.ProfilerFiller;
 import net.natural.motionblur.ShaderManager;
 import net.natural.motionblur.config.ConfigEntries;
 import net.natural.motionblur.config.ConfigManager;
@@ -108,22 +105,8 @@ public class MixinLevelRenderer {
         previousFrameReady = true;
     }
 
-    @Inject(
-            method = "lambda$addMainPass$0",
-            at = @At(value = "INVOKE", target = "Lnet/minecraft/client/renderer/GameRenderer;lighting()Lcom/mojang/blaze3d/platform/Lighting;"), require = 0
-    )
-    private void naturalMotionBlur$applyPreEntityBlurInsideMainPass(
-            GpuBufferSlice terrainFog,
-            LevelRenderState levelRenderState,
-            ProfilerFiller profiler,
-            ChunkSectionsToRender chunkSectionsToRender,
-            ResourceHandle<RenderTarget> entityOutlineTarget,
-            PreparedFrame featureFrame,
-            ResourceHandle<RenderTarget> translucentTarget,
-            ResourceHandle<RenderTarget> mainTarget,
-            ResourceHandle<RenderTarget> itemEntityTarget,
-            ResourceHandle<RenderTarget> particleTarget,
-            CallbackInfo ci) {
+    @Inject(method = "submitEntities", at = @At("HEAD"), require = 0)
+    private void naturalMotionBlur$beforeSubmitEntities(PoseStack poseStack, LevelRenderState levelRenderState, SubmitNodeCollector output, CallbackInfo ci) {
         ShaderManager.applyPreEntityVelocityOnly(naturalMotionBlur$shouldUseSpecialSingleBlur());
     }
 
