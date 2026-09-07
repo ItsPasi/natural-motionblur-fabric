@@ -19,7 +19,7 @@
       "net.natural.motionblur.NaturalMotionBlurMod"
     ],
     "modmenu": [
-      "net.natural.motionblur.NaturalMotionBlurMod"
+      "net.natural.motionblur.config.ModMenuIntegration"
     ]
   },
   "mixins": [
