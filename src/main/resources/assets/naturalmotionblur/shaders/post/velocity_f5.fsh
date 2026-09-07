@@ -12,13 +12,32 @@ layout(std140) uniform PreEntityBlurUniforms {
     vec2 view_res;
     float blendFactor;
     int   sampleCount;
+    int   blurAlgorithm;
+    int   useDepth;
+    int   depthConvention; // 0 = vanilla 26.2 (0..1 reversed-Z), 1 = Iris shader-pack (-1..1 standard depth)
 };
 
 in vec2 texCoord;
 layout(location = 0) out vec4 color;
 
+float depthToNdc(float depth) {
+    return depthConvention != 0 ? depth * 2.0 - 1.0 : depth;
+}
+float farDepthValue() {
+    return depthConvention != 0 ? 1.0 : 0.0;
+}
+float nearerDepth(float a, float b) {
+    return depthConvention != 0 ? min(a, b) : max(a, b);
+}
+
+// Hand / very-near protection.
+bool shouldProtectHand(float depth) {
+    float correctedDepth = depthConvention != 0 ? 1.0 - depth : depth;
+    return correctedDepth > 0.44;
+}
+
 vec3 reproject(vec3 screenPos) {
-    vec3 ndc      = vec3(screenPos.xy * 2.0 - 1.0, screenPos.z);
+    vec3 ndc      = vec3(screenPos.xy * 2.0 - 1.0, depthToNdc(screenPos.z));
     vec4 viewPos  = projInverse * vec4(ndc, 1.0);
     vec3 worldPos = (mvInverse * vec4(viewPos.xyz / viewPos.w, 1.0)).xyz + cameraDelta;
     vec4 prevClip = prevProjection * (prevModelView * vec4(worldPos, 1.0));
@@ -39,13 +58,17 @@ void main() {
     float depth = texelFetch(MainDepthSampler, texel, 0).x;
 
     // Iris Hand Fix
-    if (depth > 0.56) {color = texture(MainSampler, texCoord); return;}
+    if (shouldProtectHand(depth)) {
+        color = texture(MainSampler, texCoord);
+        return;
+    }
+
     // Depth blend inconsistency fix
     float dilatedDepth = depth;
-    dilatedDepth = max(dilatedDepth, texelFetch(MainDepthSampler, texel + ivec2( 1,  0), 0).x);
-    dilatedDepth = max(dilatedDepth, texelFetch(MainDepthSampler, texel + ivec2(-1,  0), 0).x);
-    dilatedDepth = max(dilatedDepth, texelFetch(MainDepthSampler, texel + ivec2( 0,  1), 0).x);
-    dilatedDepth = max(dilatedDepth, texelFetch(MainDepthSampler, texel + ivec2( 0, -1), 0).x);
+    dilatedDepth = nearerDepth(dilatedDepth, texelFetch(MainDepthSampler, texel + ivec2( 1,  0), 0).x);
+    dilatedDepth = nearerDepth(dilatedDepth, texelFetch(MainDepthSampler, texel + ivec2(-1,  0), 0).x);
+    dilatedDepth = nearerDepth(dilatedDepth, texelFetch(MainDepthSampler, texel + ivec2( 0,  1), 0).x);
+    dilatedDepth = nearerDepth(dilatedDepth, texelFetch(MainDepthSampler, texel + ivec2( 0, -1), 0).x);
 
     vec2 velocity = clampLength(texCoord - reproject(vec3(texCoord, dilatedDepth)).xy);
 

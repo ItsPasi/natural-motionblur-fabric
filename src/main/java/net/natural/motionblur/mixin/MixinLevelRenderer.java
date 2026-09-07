@@ -2,18 +2,16 @@ package net.natural.motionblur.mixin;
 
 import com.mojang.blaze3d.buffers.GpuBufferSlice;
 import com.mojang.blaze3d.resource.GraphicsResourceAllocator;
-import com.mojang.blaze3d.vertex.PoseStack;
 import net.minecraft.client.CameraType;
 import net.minecraft.client.DeltaTracker;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.LevelRenderer;
-import net.minecraft.client.renderer.SubmitNodeCollector;
 import net.minecraft.client.renderer.state.level.CameraRenderState;
-import net.minecraft.client.renderer.state.level.LevelRenderState;
 import net.natural.motionblur.ShaderManager;
 import net.natural.motionblur.config.ConfigEntries;
 import net.natural.motionblur.config.ConfigManager;
 import net.natural.motionblur.recording.RecordingShaderManager;
+import net.natural.motionblur.util.IrisCompat;
 import org.joml.Matrix4f;
 import org.joml.Matrix4fc;
 import org.joml.Vector4f;
@@ -72,6 +70,7 @@ public class MixinLevelRenderer {
 
         scratchModelView.set(modelViewMatrix);
         scratchProjection.set(cameraState.projectionMatrix);
+        IrisCompat.copyGbufferMatrices(scratchModelView, scratchProjection);
 
         if (!previousFrameReady) {
             ShaderManager.setFrameMotionBlur(
@@ -105,8 +104,15 @@ public class MixinLevelRenderer {
         previousFrameReady = true;
     }
 
-    @Inject(method = "submitEntities", at = @At("HEAD"), require = 0)
-    private void naturalMotionBlur$beforeSubmitEntities(PoseStack poseStack, LevelRenderState levelRenderState, SubmitNodeCollector output, CallbackInfo ci) {
+    @Inject(
+            method = "lambda$addMainPass$0",
+            at = @At(
+                    value = "INVOKE",
+                    target = "Lnet/minecraft/client/renderer/feature/FeatureRenderDispatcher$PreparedFrame;executeSolid()V"
+            ),
+            require = 0
+    )
+    private void naturalMotionBlur$beforeSolidFeatures(CallbackInfo ci) {
         ShaderManager.applyPreEntityVelocityOnly(naturalMotionBlur$shouldUseSpecialSingleBlur());
     }
 
@@ -114,6 +120,8 @@ public class MixinLevelRenderer {
     private void naturalMotionBlur$onRenderLevelTail(GraphicsResourceAllocator resourceAllocator, DeltaTracker deltaTracker, boolean renderOutline, CameraRenderState cameraState, Matrix4fc modelViewMatrix, GpuBufferSlice terrainFog, Vector4f fogColor, boolean shouldRenderSky, CallbackInfo ci) {
         ConfigEntries config = ConfigManager.getConfig();
         boolean specialSingleBlur = naturalMotionBlur$shouldUseSpecialSingleBlur();
+
+        ShaderManager.applyDeferredIrisPreEntityVelocityOnly(specialSingleBlur);
 
         if (config.blurAlgorithm == ConfigEntries.BlurAlgorithm.HYBRID_BLENDING) {
             if (!specialSingleBlur) {

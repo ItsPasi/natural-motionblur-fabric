@@ -20,7 +20,8 @@
           { "name": "BlendFactor",       "type": "float",     "value": 0.5 },
           { "name": "motionBlurSamples", "type": "int",       "value": 100 },
           { "name": "blurAlgorithm",     "type": "int",       "value": 1 },
-          { "name": "useDepth",          "type": "int",       "value": 1 }
+          { "name": "useDepth",          "type": "int",       "value": 1 },
+          { "name": "depthConvention",   "type": "int",       "value": 0 }
         ]
       }
     },
