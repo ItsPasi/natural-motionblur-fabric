@@ -10,7 +10,6 @@ import java.lang.reflect.Method;
 public final class IrisCompat {
 
     private static boolean irisLookupDone;
-    private static Class<?> irisClass;
     private static Method isPackInUseQuick;
 
     private IrisCompat() {}
@@ -18,8 +17,7 @@ public final class IrisCompat {
     public static boolean isShaderPackInUse() {
         try {
             ensureIrisLookup();
-            return irisClass != null
-                    && isPackInUseQuick != null
+            return isPackInUseQuick != null
                     && Boolean.TRUE.equals(isPackInUseQuick.invoke(null));
         } catch (Throwable ignored) {
             return false;
@@ -61,17 +59,14 @@ public final class IrisCompat {
 
     }
 
-    public static void invalidate() {
-    }
 
     private static void ensureIrisLookup() throws Exception {
         if (irisLookupDone) return;
         irisLookupDone = true;
         try {
-            irisClass = Class.forName("net.irisshaders.iris.Iris");
+            Class<?> irisClass = Class.forName("net.irisshaders.iris.Iris");
             isPackInUseQuick = irisClass.getMethod("isPackInUseQuick");
         } catch (ClassNotFoundException e) {
-            irisClass = null;
             isPackInUseQuick = null;
         }
     }

@@ -83,7 +83,6 @@ public class ShaderManager {
         }
         irisPreDepthCaptured = false;
         FrameBlendingManager.invalidate();
-        IrisCompat.invalidate();
     }
 
     public static void setFrameMotionBlur(Matrix4f modelView, Matrix4f prevModelView,
