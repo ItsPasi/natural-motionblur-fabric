@@ -33,6 +33,7 @@ public class ShaderManager {
     private static final BlurStrengthCalculator strengthCalc = new BlurStrengthCalculator();
 
     private static GraphicsResourceAllocator frameAllocator = null;
+    private static boolean deferredTemporalBlurApplied = false;
 
     private static PostChain cachedPreProcessor  = null;
     private static PostChain cachedF5Processor   = null;
@@ -48,7 +49,10 @@ public class ShaderManager {
 
     public static void captureAllocator(GraphicsResourceAllocator allocator) { frameAllocator = allocator; }
     public static void clearFrameAllocator() { frameAllocator = null; }
-    public static void beginFrame() { frameTimer.beginFrame(); }
+    public static void beginFrame() {
+        frameTimer.beginFrame();
+        deferredTemporalBlurApplied = false;
+    }
     public static float getCurrentFPS() { return frameTimer.getFPS(); }
     public static void invalidate() {
         preEntityUBO.reset();
@@ -68,15 +72,24 @@ public class ShaderManager {
     public static void applyPostRenderVelocityOnly() { if (shouldRun()) applyBlurInternal(BlurPass.NORMAL_POST, false); }
 
     public static void applyDeferredTemporalBlur() {
-        if (frameAllocator == null || !shouldRun()) return;
+        if (deferredTemporalBlurApplied || frameAllocator == null || !shouldRun()) return;
 
         ConfigEntries config = ConfigManager.getConfig();
         switch (config.blurAlgorithm) {
-            case FRAME_BLENDING, HYBRID_BLENDING -> applyFrameBlendingInternal();
-            case ACCUMULATION_MAX -> FrameBlendingManager.applyAccumulationMax(
-                    frameAllocator, config.getEffectiveMotionBlurStrength());
-            case ACCUMULATION_MIX -> FrameBlendingManager.applyAccumulationMix(
-                    frameAllocator, config.getEffectiveMotionBlurStrength());
+            case FRAME_BLENDING, HYBRID_BLENDING -> {
+                applyFrameBlendingInternal();
+                deferredTemporalBlurApplied = true;
+            }
+            case ACCUMULATION_MAX -> {
+                FrameBlendingManager.applyAccumulationMax(
+                        frameAllocator, config.getEffectiveMotionBlurStrength());
+                deferredTemporalBlurApplied = true;
+            }
+            case ACCUMULATION_MIX -> {
+                FrameBlendingManager.applyAccumulationMix(
+                        frameAllocator, config.getEffectiveMotionBlurStrength());
+                deferredTemporalBlurApplied = true;
+            }
             default -> {}
         }
     }
@@ -92,29 +105,15 @@ public class ShaderManager {
         ConfigEntries config = ConfigManager.getConfig();
         Minecraft     client = Minecraft.getInstance();
 
-        // Accumulation / frame blending options are deferred until after the hand render.
+        // Accumulation Blur
         if (includeTemporal) {
-            if (config.blurAlgorithm == ConfigEntries.BlurAlgorithm.FRAME_BLENDING) {
-                return;
-            }
+            if (config.blurAlgorithm == ConfigEntries.BlurAlgorithm.FRAME_BLENDING) {return;}
+            if (config.blurAlgorithm == ConfigEntries.BlurAlgorithm.ACCUMULATION_MAX) {return;}
+            if (config.blurAlgorithm == ConfigEntries.BlurAlgorithm.ACCUMULATION_MIX) {return;}
+        } else if (!config.usesVelocityBlur()) {return;}
 
-            if (config.blurAlgorithm == ConfigEntries.BlurAlgorithm.ACCUMULATION_MAX) {
-                return;
-            }
-
-            if (config.blurAlgorithm == ConfigEntries.BlurAlgorithm.ACCUMULATION_MIX) {
-                return;
-            }
-        } else if (!config.usesVelocityBlur()) {
-            return;
-        }
-
-        // Velocity Option
-        BlurStrengthCalculator.Result blur = strengthCalc.calculate(
-                config.getEffectiveMotionBlurStrength(),
-                frameTimer.getFPS(),
-                frameTimer.getRefreshRate(),
-                config.refreshRateScaling && config.allowsRefreshRateScaling());
+        // Velocity Blur
+        BlurStrengthCalculator.Result blur = calculateVelocityBlur(config);
         float viewW = client.getMainRenderTarget().width;
         float viewH = client.getMainRenderTarget().height;
         int   algo  = config.blurAlgorithm.ordinal();
@@ -146,8 +145,30 @@ public class ShaderManager {
 
     private static void applyFrameBlendingInternal() {
         if (frameAllocator == null) return;
+        ConfigEntries config = ConfigManager.getConfig();
         FrameBlendingManager.applyFrameBlending(
-                frameAllocator, frameTimer.getFPS(), frameTimer.getRefreshRate());
+                frameAllocator,
+                frameTimer.getFPS(),
+                frameTimer.getRefreshRate(),
+                config.getEffectiveMotionBlurStrength());
+    }
+
+    private static BlurStrengthCalculator.Result calculateVelocityBlur(ConfigEntries config) {
+        float fps = frameTimer.getFPS();
+        int refreshRate = frameTimer.getRefreshRate();
+
+        if (config.blurAlgorithm == ConfigEntries.BlurAlgorithm.HYBRID_BLENDING) {
+            float fillerStrength = FrameBlendingManager.getHybridVelocityStrength(
+                    fps, refreshRate, config.getEffectiveMotionBlurStrength());
+            int sampleAmount = Math.max(100, Math.round(100.0f * fillerStrength));
+            return new BlurStrengthCalculator.Result(fillerStrength, sampleAmount);
+        }
+
+        return strengthCalc.calculate(
+                config.getEffectiveMotionBlurStrength(),
+                fps,
+                refreshRate,
+                config.refreshRateScaling && config.allowsRefreshRateScaling());
     }
 
     // Shader cache
@@ -192,9 +213,7 @@ public class ShaderManager {
 
     // UBO writing
 
-    private static void writeAndRun(PostChain processor, String uboKey, ManagedUniformBuffer managedUBO,
-                                    float blendFactor, float viewW, float viewH,
-                                    int blurAlgorithm, int sampleAmount, Minecraft client) {
+    private static void writeAndRun(PostChain processor, String uboKey, ManagedUniformBuffer managedUBO, float blendFactor, float viewW, float viewH, int blurAlgorithm, int sampleAmount, Minecraft client) {
         List<PostPass> passes = ((PostChainAccessor) processor).getPasses();
         if (passes.isEmpty()) return;
 
