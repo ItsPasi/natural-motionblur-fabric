@@ -13,7 +13,6 @@ public class ConfigEntries {
 
     public boolean usesVelocityBlur() {return blurAlgorithm == BlurAlgorithm.VELOCITY_BASED || blurAlgorithm == BlurAlgorithm.HYBRID_BLENDING;}
     public boolean allowsRefreshRateScaling() {return blurAlgorithm == BlurAlgorithm.VELOCITY_BASED;}
-    public boolean locksStrengthToOne() {return blurAlgorithm == BlurAlgorithm.HYBRID_BLENDING;}
-    public float getEffectiveMotionBlurStrength() {return locksStrengthToOne() ? 1.0F : motionBlurStrength;}
-    public boolean showsStrengthSlider() {return blurAlgorithm != BlurAlgorithm.FRAME_BLENDING && !locksStrengthToOne();}
+    public float getEffectiveMotionBlurStrength() {return motionBlurStrength;}
+    public boolean showsStrengthSlider() {return true;}
 }
