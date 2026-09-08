@@ -288,16 +288,10 @@ public class ShaderManager {
         int refreshRate = frameTimer.getRefreshRate();
 
         if (config.blurAlgorithm == ConfigEntries.BlurAlgorithm.HYBRID_BLENDING) {
-            float baseStrength = Math.max(0.0f, config.getEffectiveMotionBlurStrength());
-            float fillerStrength = baseStrength;
-
-            if (fps > 0.0f && refreshRate > 0) {
-                float referenceRate = Math.min(fps, (float) refreshRate);
-                fillerStrength = baseStrength * (fps / referenceRate);
-            }
-
-            fillerStrength = Math.min(1.0f, fillerStrength);
-            return new BlurStrengthCalculator.Result(fillerStrength, 100);
+            float fillerStrength = FrameBlendingManager.getHybridVelocityStrength(
+                    fps, refreshRate, config.getEffectiveMotionBlurStrength());
+            int sampleAmount = Math.max(100, Math.round(100.0f * fillerStrength));
+            return new BlurStrengthCalculator.Result(fillerStrength, sampleAmount);
         }
 
         return strengthCalc.calculate(

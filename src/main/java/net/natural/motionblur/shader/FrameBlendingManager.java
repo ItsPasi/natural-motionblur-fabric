@@ -198,6 +198,35 @@ public class FrameBlendingManager {
         }
     }
 
+    public static float getHybridVelocityStrength(float fps, int refreshRate, float strength) {
+        float baseStrength = Math.max(0.0f, strength);
+        if (baseStrength == 0.0f || fps <= 0.0f || refreshRate <= 0) return baseStrength;
+
+        float referenceRate = Math.min(fps, (float) refreshRate);
+        float frameSpan = baseStrength * (fps / referenceRate);
+        float fillerStrength = Math.min(1.0f, frameSpan);
+
+        float blendFPS = (smoothedFPS <= 0.0f) ? fps : smoothedFPS * 0.85f + fps * 0.15f;
+        float blendReferenceRate = Math.min(blendFPS, (float) refreshRate);
+        float blendFrameSpan = baseStrength * (blendFPS / blendReferenceRate);
+        int sampleCount = Math.min(MAX_HISTORY, (int)Math.ceil(blendFrameSpan - 0.000001f));
+        sampleCount = Math.min(sampleCount, Math.min(MAX_HISTORY, historyFilled + 1));
+        int sampleLimit = activeFrameBlendSampleLimit();
+
+        if (sampleCount > sampleLimit) {
+            int maxGap = 1;
+            int previous = 0;
+            for (int out = 1; out < sampleLimit; out++) {
+                int source = Math.round((float)out * (sampleCount - 1) / (sampleLimit - 1));
+                maxGap = Math.max(maxGap, source - previous);
+                previous = source;
+            }
+            fillerStrength = Math.max(fillerStrength, maxGap);
+        }
+
+        return fillerStrength;
+    }
+
     private static void pushHistoryFrame(RenderTarget src, double timestamp) {
         if (historyTargets[historyWriteIndex] == null) return;
         copyTexture(src, historyTargets[historyWriteIndex]);
