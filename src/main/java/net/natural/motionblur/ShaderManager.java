@@ -110,11 +110,7 @@ public class ShaderManager {
         }
 
         // Velocity Option
-        BlurStrengthCalculator.Result blur = strengthCalc.calculate(
-                config.getEffectiveMotionBlurStrength(),
-                frameTimer.getFPS(),
-                frameTimer.getRefreshRate(),
-                config.refreshRateScaling && config.allowsRefreshRateScaling());
+        BlurStrengthCalculator.Result blur = calculateVelocityBlur(config);
         float viewW = client.getMainRenderTarget().width;
         float viewH = client.getMainRenderTarget().height;
         int   algo  = config.blurAlgorithm.ordinal();
@@ -146,8 +142,30 @@ public class ShaderManager {
 
     private static void applyFrameBlendingInternal() {
         if (frameAllocator == null) return;
+        ConfigEntries config = ConfigManager.getConfig();
         FrameBlendingManager.applyFrameBlending(
-                frameAllocator, frameTimer.getFPS(), frameTimer.getRefreshRate());
+                frameAllocator,
+                frameTimer.getFPS(),
+                frameTimer.getRefreshRate(),
+                config.getEffectiveMotionBlurStrength());
+    }
+
+    private static BlurStrengthCalculator.Result calculateVelocityBlur(ConfigEntries config) {
+        float fps = frameTimer.getFPS();
+        int refreshRate = frameTimer.getRefreshRate();
+
+        if (config.blurAlgorithm == ConfigEntries.BlurAlgorithm.HYBRID_BLENDING) {
+            float fillerStrength = FrameBlendingManager.getHybridVelocityStrength(
+                    fps, refreshRate, config.getEffectiveMotionBlurStrength());
+            int sampleAmount = Math.max(100, Math.round(100.0f * fillerStrength));
+            return new BlurStrengthCalculator.Result(fillerStrength, sampleAmount);
+        }
+
+        return strengthCalc.calculate(
+                config.getEffectiveMotionBlurStrength(),
+                fps,
+                refreshRate,
+                config.refreshRateScaling && config.allowsRefreshRateScaling());
     }
 
     // Shader cache

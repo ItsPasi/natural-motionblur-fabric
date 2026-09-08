@@ -90,13 +90,11 @@ public class ConfigManager {
                         .append(Component.literal("Matches LABYMOD MAX, LUNAR V2/V3, BLC 3.0/Badlion.").withStyle(style -> style.withColor(0xAAAAAA).withItalic(true)))))
                 .binding(ConfigEntries.BlurAlgorithm.VELOCITY_BASED, () -> cfg.blurAlgorithm, newValue -> cfg.blurAlgorithm = newValue)
                 .listener((opt, newValue) -> {
-                    if (newValue == ConfigEntries.BlurAlgorithm.HYBRID_BLENDING) {
+                    if (newValue != ConfigEntries.BlurAlgorithm.VELOCITY_BASED) {
                         cfg.refreshRateScaling = false;
-                        cfg.motionBlurStrength = 1.0F;
                     }
                     refreshRateScalingOption.setAvailable(newValue == ConfigEntries.BlurAlgorithm.VELOCITY_BASED);
-                    strengthOption.setAvailable(newValue != ConfigEntries.BlurAlgorithm.FRAME_BLENDING
-                            && newValue != ConfigEntries.BlurAlgorithm.HYBRID_BLENDING);
+                    strengthOption.setAvailable(true);
                 })
                 .controller(opt -> EnumControllerBuilder.create(opt)
                         .enumClass(ConfigEntries.BlurAlgorithm.class)
@@ -250,9 +248,6 @@ public class ConfigManager {
     private static void sanitizeConfigState(ConfigEntries cfg) {
         if (!cfg.allowsRefreshRateScaling()) {
             cfg.refreshRateScaling = false;
-        }
-        if (cfg.locksStrengthToOne()) {
-            cfg.motionBlurStrength = 1.0F;
         }
     }
 

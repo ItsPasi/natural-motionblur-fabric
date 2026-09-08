@@ -31,7 +31,8 @@ public class FrameBlendingManager {
 
     private static final int FRAME_BLEND_UBO_SIZE = 64;
     private static final int ACCUM_UBO_SIZE = 16;
-    private static final int MAX_HISTORY = 12;
+    private static final int MAX_HISTORY = 24;
+    private static final int FRAME_BLEND_SAMPLE_LIMIT = 12;
     private static final int UBO_RING_SIZE = 3;
 
     private static final String MAIN_SAMPLER = "Main";
@@ -56,6 +57,8 @@ public class FrameBlendingManager {
     private static final double[] historyTimestamps = new double[MAX_HISTORY];
     private static final int[] weightedHistoryIndices = new int[MAX_HISTORY];
     private static final float[] weightedHistoryWeights = new float[MAX_HISTORY];
+    private static final int[] compactHistoryIndices = new int[MAX_HISTORY];
+    private static final float[] compactHistoryWeights = new float[MAX_HISTORY];
     private static int historyWriteIndex = 0;
     private static int historyFilled     = 0;
 
@@ -76,12 +79,12 @@ public class FrameBlendingManager {
 
     private static final Set<String> loadErrorLogged = new HashSet<>();
 
-    public static void applyFrameBlending(GraphicsResourceAllocator allocator, float fps, int refreshRate) {
+    public static void applyFrameBlending(GraphicsResourceAllocator allocator, float fps, int refreshRate, float strength) {
         Minecraft client = Minecraft.getInstance();
         RenderTarget main = client.getMainRenderTarget();
         updateSmoothedFPS(fps);
 
-        if (refreshRate <= 0) {
+        if (refreshRate <= 0 || strength <= 0.0f) {
             historyWriteIndex = 0;
             historyFilled = 0;
             return;
@@ -92,7 +95,7 @@ public class FrameBlendingManager {
         double now = currentTimeSeconds();
         pushHistoryFrame(main, now);
 
-        int sampleCount = buildWeightedSampleList(now, refreshRate, smoothedFPS);
+        int sampleCount = buildWeightedSampleList(now, refreshRate, smoothedFPS, strength);
         if (sampleCount <= 1) {
             return;
         }
@@ -110,7 +113,7 @@ public class FrameBlendingManager {
             writeBlendParamsUBO(combineUBO, inverseTotalWeight(sampleCount), sampleCount);
 
             RenderTarget fallback = historyTargets[weightedHistoryIndices[sampleCount - 1]];
-            for (int i = 0; i < MAX_HISTORY; i++) {
+            for (int i = 0; i < FRAME_BLEND_SAMPLE_LIMIT; i++) {
                 RenderTarget target = (i < sampleCount)
                         ? historyTargets[weightedHistoryIndices[i]]
                         : fallback;
@@ -165,6 +168,8 @@ public class FrameBlendingManager {
         smoothedFPS = 0;
         Arrays.fill(weightedHistoryIndices, 0);
         Arrays.fill(weightedHistoryWeights, 0.0f);
+        Arrays.fill(compactHistoryIndices, 0);
+        Arrays.fill(compactHistoryWeights, 0.0f);
         cachedCombineChain = null;
         cachedAccumMaxChain = null;
         cachedAccumMixChain = null;
@@ -188,11 +193,43 @@ public class FrameBlendingManager {
         if (historyFilled < MAX_HISTORY) historyFilled++;
     }
 
-    private static int buildWeightedSampleList(double exposureEnd, int refreshRate, float fps) {
+    public static float getHybridVelocityStrength(float fps, int refreshRate, float strength) {
+        float baseStrength = Math.max(0.0f, strength);
+        if (baseStrength == 0.0f || fps <= 0.0f || refreshRate <= 0) return baseStrength;
+
+        float referenceRate = Math.min(fps, (float) refreshRate);
+        float frameSpan = baseStrength * (fps / referenceRate);
+        float fillerStrength = Math.min(1.0f, frameSpan);
+
+        float blendFPS = (smoothedFPS <= 0.0f) ? fps : smoothedFPS * 0.85f + fps * 0.15f;
+        float blendReferenceRate = Math.min(blendFPS, (float) refreshRate);
+        float blendFrameSpan = baseStrength * (blendFPS / blendReferenceRate);
+        int sampleCount = Math.min(MAX_HISTORY, (int)Math.ceil(blendFrameSpan - 0.000001f));
+        sampleCount = Math.min(sampleCount, Math.min(MAX_HISTORY, historyFilled + 1));
+
+        if (sampleCount > FRAME_BLEND_SAMPLE_LIMIT) {
+            int maxGap = 1;
+            int previous = 0;
+            for (int out = 1; out < FRAME_BLEND_SAMPLE_LIMIT; out++) {
+                int source = Math.round((float)out * (sampleCount - 1) / (FRAME_BLEND_SAMPLE_LIMIT - 1));
+                maxGap = Math.max(maxGap, source - previous);
+                previous = source;
+            }
+            fillerStrength = Math.max(fillerStrength, maxGap);
+        }
+
+        return fillerStrength;
+    }
+
+    private static int buildWeightedSampleList(double exposureEnd, int refreshRate, float fps, float strength) {
         Arrays.fill(weightedHistoryWeights, 0.0f);
         if (historyFilled <= 0) return 0;
 
-        double exposureStart = exposureEnd - (1.0 / refreshRate);
+        double referenceRate = (fps > 0.0f)
+                ? Math.min(fps, (double) refreshRate)
+                : (double) refreshRate;
+        double exposureDuration = Math.max(0.0, strength) / referenceRate;
+        double exposureStart = exposureEnd - exposureDuration;
         double estimatedFrameTime = (fps > 0.0f) ? 1.0 / fps : 1.0 / refreshRate;
         double totalWeight = 0.0;
         int sampleCount = 0;
@@ -224,7 +261,48 @@ public class FrameBlendingManager {
 
         if (sampleCount <= 0) return 0;
         if (totalWeight <= 0.0000001) return 0;
+
+        if (sampleCount > FrameBlendingManager.FRAME_BLEND_SAMPLE_LIMIT) {
+            sampleCount = compactWeightedSampleList(sampleCount);
+        }
+
         return sampleCount;
+    }
+
+    private static int compactWeightedSampleList(int sampleCount) {
+        if (sampleCount <= FrameBlendingManager.FRAME_BLEND_SAMPLE_LIMIT || FrameBlendingManager.FRAME_BLEND_SAMPLE_LIMIT <= 0) return sampleCount;
+        if (FrameBlendingManager.FRAME_BLEND_SAMPLE_LIMIT == 1) {
+            float totalWeight = 0.0f;
+            for (int i = 0; i < sampleCount; i++) totalWeight += weightedHistoryWeights[i];
+            weightedHistoryIndices[0] = weightedHistoryIndices[sampleCount - 1];
+            weightedHistoryWeights[0] = totalWeight;
+            for (int i = 1; i < sampleCount; i++) weightedHistoryWeights[i] = 0.0f;
+            return 1;
+        }
+
+        Arrays.fill(compactHistoryWeights, 0.0f);
+
+        for (int out = 0; out < FrameBlendingManager.FRAME_BLEND_SAMPLE_LIMIT; out++) {
+            int source = Math.round((float) out * (sampleCount - 1) / (FrameBlendingManager.FRAME_BLEND_SAMPLE_LIMIT - 1));
+            compactHistoryIndices[out] = weightedHistoryIndices[source];
+        }
+
+        for (int source = 0; source < sampleCount; source++) {
+            int out = Math.round((float) source * (FrameBlendingManager.FRAME_BLEND_SAMPLE_LIMIT - 1) / (sampleCount - 1));
+            if (out < 0) out = 0;
+            if (out >= FrameBlendingManager.FRAME_BLEND_SAMPLE_LIMIT) out = FrameBlendingManager.FRAME_BLEND_SAMPLE_LIMIT - 1;
+            compactHistoryWeights[out] += weightedHistoryWeights[source];
+        }
+
+        for (int i = 0; i < FrameBlendingManager.FRAME_BLEND_SAMPLE_LIMIT; i++) {
+            weightedHistoryIndices[i] = compactHistoryIndices[i];
+            weightedHistoryWeights[i] = compactHistoryWeights[i];
+        }
+        for (int i = FrameBlendingManager.FRAME_BLEND_SAMPLE_LIMIT; i < sampleCount; i++) {
+            weightedHistoryWeights[i] = 0.0f;
+        }
+
+        return FrameBlendingManager.FRAME_BLEND_SAMPLE_LIMIT;
     }
 
     private static float inverseTotalWeight(int sampleCount) {
@@ -396,7 +474,7 @@ public class FrameBlendingManager {
             Std140Builder b = Std140Builder.intoBuffer(view.data());
             b.putFloat(invTotalWeight);
             b.putInt(sampleCount);
-            for (int i = 0; i < MAX_HISTORY; i++) {
+            for (int i = 0; i < FRAME_BLEND_SAMPLE_LIMIT; i++) {
                 b.putFloat(i < sampleCount ? weightedHistoryWeights[i] : 0.0f);
             }
             b.putFloat(0.0f);
