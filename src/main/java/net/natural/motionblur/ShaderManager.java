@@ -139,11 +139,7 @@ public class ShaderManager {
             return;
         }
 
-        BlurStrengthCalculator.Result blur = strengthCalc.calculate(
-                config.getEffectiveMotionBlurStrength(),
-                frameTimer.getFPS(),
-                frameTimer.getRefreshRate(),
-                config.refreshRateScaling && config.allowsRefreshRateScaling());
+        BlurStrengthCalculator.Result blur = calculateVelocityBlur(config);
 
         float viewW = main.width;
         float viewH = main.height;
@@ -204,11 +200,7 @@ public class ShaderManager {
             return;
         }
 
-        BlurStrengthCalculator.Result blur = strengthCalc.calculate(
-                config.getEffectiveMotionBlurStrength(),
-                frameTimer.getFPS(),
-                frameTimer.getRefreshRate(),
-                config.refreshRateScaling && config.allowsRefreshRateScaling());
+        BlurStrengthCalculator.Result blur = calculateVelocityBlur(config);
 
         PostChain processor = getIrisDeferredPreProcessor(client);
         if (processor == null) {
@@ -269,11 +261,7 @@ public class ShaderManager {
         if (!config.usesVelocityBlur()) {return;}
 
         Minecraft client = Minecraft.getInstance();
-        BlurStrengthCalculator.Result blur = strengthCalc.calculate(
-                config.getEffectiveMotionBlurStrength(),
-                frameTimer.getFPS(),
-                frameTimer.getRefreshRate(),
-                config.refreshRateScaling && config.allowsRefreshRateScaling());
+        BlurStrengthCalculator.Result blur = calculateVelocityBlur(config);
         RenderTarget main = ClientRenderTargets.getMain(client);
         float viewW = main.width;
         float viewH = main.height;
@@ -287,8 +275,36 @@ public class ShaderManager {
 
     private static void applyFrameBlendingInternal() {
         if (frameAllocator == null) return;
+        ConfigEntries config = ConfigManager.getConfig();
         FrameBlendingManager.applyFrameBlending(
-                frameAllocator, frameTimer.getFPS(), frameTimer.getRefreshRate());
+                frameAllocator,
+                frameTimer.getFPS(),
+                frameTimer.getRefreshRate(),
+                config.getEffectiveMotionBlurStrength());
+    }
+
+    private static BlurStrengthCalculator.Result calculateVelocityBlur(ConfigEntries config) {
+        float fps = frameTimer.getFPS();
+        int refreshRate = frameTimer.getRefreshRate();
+
+        if (config.blurAlgorithm == ConfigEntries.BlurAlgorithm.HYBRID_BLENDING) {
+            float baseStrength = Math.max(0.0f, config.getEffectiveMotionBlurStrength());
+            float fillerStrength = baseStrength;
+
+            if (fps > 0.0f && refreshRate > 0) {
+                float referenceRate = Math.min(fps, (float) refreshRate);
+                fillerStrength = baseStrength * (fps / referenceRate);
+            }
+
+            fillerStrength = Math.min(1.0f, fillerStrength);
+            return new BlurStrengthCalculator.Result(fillerStrength, 100);
+        }
+
+        return strengthCalc.calculate(
+                config.getEffectiveMotionBlurStrength(),
+                fps,
+                refreshRate,
+                config.refreshRateScaling && config.allowsRefreshRateScaling());
     }
 
     // Shader cache

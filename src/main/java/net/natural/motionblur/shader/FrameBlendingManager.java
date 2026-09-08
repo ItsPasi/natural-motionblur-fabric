@@ -61,6 +61,12 @@ public class FrameBlendingManager {
     private static final double[] historyTimestamps = new double[MAX_HISTORY];
     private static final int[] weightedHistoryIndices = new int[MAX_HISTORY];
     private static final float[] weightedHistoryWeights = new float[MAX_HISTORY];
+    // Scratch storage used when the requested exposure contains more history frames
+    // than the active backend can bind at once (OpenGL is limited to 12 here).
+    // We compact the full temporal window into the available samples instead of
+    // dropping the oldest frames, so increasing strength still increases blur length.
+    private static final int[] compactHistoryIndices = new int[MAX_HISTORY];
+    private static final float[] compactHistoryWeights = new float[MAX_HISTORY];
     private static int historyWriteIndex = 0;
     private static int historyFilled     = 0;
 
@@ -83,12 +89,12 @@ public class FrameBlendingManager {
 
     private static final Set<String> loadErrorLogged = new HashSet<>();
 
-    public static void applyFrameBlending(GraphicsResourceAllocator allocator, float fps, int refreshRate) {
+    public static void applyFrameBlending(GraphicsResourceAllocator allocator, float fps, int refreshRate, float strength) {
         Minecraft client = Minecraft.getInstance();
         RenderTarget main = ClientRenderTargets.getMain(client);
         updateSmoothedFPS(fps);
 
-        if (refreshRate <= 0) {
+        if (refreshRate <= 0 || strength <= 0.0f) {
             historyWriteIndex = 0;
             historyFilled = 0;
             return;
@@ -100,7 +106,7 @@ public class FrameBlendingManager {
         pushHistoryFrame(main, now);
 
         int activeMaxHistory = activeFrameBlendSampleLimit();
-        int sampleCount = buildWeightedSampleList(now, refreshRate, smoothedFPS, activeMaxHistory);
+        int sampleCount = buildWeightedSampleList(now, refreshRate, smoothedFPS, activeMaxHistory, strength);
         if (sampleCount <= 1) {
             return;
         }
@@ -175,6 +181,8 @@ public class FrameBlendingManager {
         smoothedFPS = 0;
         Arrays.fill(weightedHistoryIndices, 0);
         Arrays.fill(weightedHistoryWeights, 0.0f);
+        Arrays.fill(compactHistoryIndices, 0);
+        Arrays.fill(compactHistoryWeights, 0.0f);
         cachedCombineChain = null;
         cachedAccumMaxChain = null;
         cachedAccumMixChain = null;
@@ -198,11 +206,16 @@ public class FrameBlendingManager {
         if (historyFilled < MAX_HISTORY) historyFilled++;
     }
 
-    private static int buildWeightedSampleList(double exposureEnd, int refreshRate, float fps, int maxSamples) {
+    private static int buildWeightedSampleList(double exposureEnd, int refreshRate, float fps, int maxSamples, float strength) {
         Arrays.fill(weightedHistoryWeights, 0.0f);
         if (historyFilled <= 0) return 0;
 
-        double exposureStart = exposureEnd - (1.0 / refreshRate);
+        // Match Velocity Based + Refresh Rate Scaling
+        double referenceRate = (fps > 0.0f)
+                ? Math.min(fps, (double) refreshRate)
+                : (double) refreshRate;
+        double exposureDuration = Math.max(0.0, strength) / referenceRate;
+        double exposureStart = exposureEnd - exposureDuration;
         double estimatedFrameTime = (fps > 0.0f) ? 1.0 / fps : 1.0 / refreshRate;
         double totalWeight = 0.0;
         int sampleCount = 0;
@@ -236,18 +249,47 @@ public class FrameBlendingManager {
         if (totalWeight <= 0.0000001) return 0;
 
         if (sampleCount > maxSamples) {
-            int offset = sampleCount - maxSamples;
-            for (int i = 0; i < maxSamples; i++) {
-                weightedHistoryIndices[i] = weightedHistoryIndices[offset + i];
-                weightedHistoryWeights[i] = weightedHistoryWeights[offset + i];
-            }
-            for (int i = maxSamples; i < sampleCount; i++) {
-                weightedHistoryWeights[i] = 0.0f;
-            }
-            sampleCount = maxSamples;
+            sampleCount = compactWeightedSampleList(sampleCount, maxSamples);
         }
 
         return sampleCount;
+    }
+
+    private static int compactWeightedSampleList(int sampleCount, int maxSamples) {
+        if (sampleCount <= maxSamples || maxSamples <= 0) return sampleCount;
+        if (maxSamples == 1) {
+            float totalWeight = 0.0f;
+            for (int i = 0; i < sampleCount; i++) totalWeight += weightedHistoryWeights[i];
+            weightedHistoryIndices[0] = weightedHistoryIndices[sampleCount - 1];
+            weightedHistoryWeights[0] = totalWeight;
+            for (int i = 1; i < sampleCount; i++) weightedHistoryWeights[i] = 0.0f;
+            return 1;
+        }
+
+        Arrays.fill(compactHistoryWeights, 0.0f);
+
+        // Select evenly distributed source frames
+        for (int out = 0; out < maxSamples; out++) {
+            int source = Math.round((float) out * (sampleCount - 1) / (maxSamples - 1));
+            compactHistoryIndices[out] = weightedHistoryIndices[source];
+        }
+
+        for (int source = 0; source < sampleCount; source++) {
+            int out = Math.round((float) source * (maxSamples - 1) / (sampleCount - 1));
+            if (out < 0) out = 0;
+            if (out >= maxSamples) out = maxSamples - 1;
+            compactHistoryWeights[out] += weightedHistoryWeights[source];
+        }
+
+        for (int i = 0; i < maxSamples; i++) {
+            weightedHistoryIndices[i] = compactHistoryIndices[i];
+            weightedHistoryWeights[i] = compactHistoryWeights[i];
+        }
+        for (int i = maxSamples; i < sampleCount; i++) {
+            weightedHistoryWeights[i] = 0.0f;
+        }
+
+        return maxSamples;
     }
 
     private static float inverseTotalWeight(int sampleCount) {
