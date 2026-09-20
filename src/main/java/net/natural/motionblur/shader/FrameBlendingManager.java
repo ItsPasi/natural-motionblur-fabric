@@ -1,13 +1,13 @@
 package net.natural.motionblur.shader;
 
-import com.mojang.blaze3d.buffers.GpuBuffer;
+import com.mojang.renderpearl.api.buffers.GpuBuffer;
 import com.mojang.blaze3d.framegraph.FramePass;
 import com.mojang.blaze3d.pipeline.MainTarget;
 import com.mojang.blaze3d.pipeline.RenderTarget;
 import com.mojang.blaze3d.resource.GraphicsResourceAllocator;
 import com.mojang.blaze3d.resource.ResourceHandle;
 import com.mojang.blaze3d.systems.RenderSystem;
-import com.mojang.blaze3d.textures.GpuTextureView;
+import com.mojang.renderpearl.api.textures.GpuTextureView;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.LevelTargetBundle;
 import net.minecraft.client.renderer.PostChain;
@@ -16,7 +16,6 @@ import net.minecraft.resources.Identifier;
 import net.natural.motionblur.NaturalMotionBlurMod;
 import net.natural.motionblur.mixin.PostChainAccessor;
 import net.natural.motionblur.mixin.PostPassAccessor;
-import net.natural.motionblur.mixin.ShaderManagerAccessor;
 import net.natural.motionblur.util.ClientRenderTargets;
 import net.natural.motionblur.util.GpuBufferUtil;
 import net.natural.motionblur.util.ManagedUniformBuffer;
@@ -61,10 +60,6 @@ public class FrameBlendingManager {
     private static final double[] historyTimestamps = new double[MAX_HISTORY];
     private static final int[] weightedHistoryIndices = new int[MAX_HISTORY];
     private static final float[] weightedHistoryWeights = new float[MAX_HISTORY];
-    // Scratch storage used when the requested exposure contains more history frames
-    // than the active backend can bind at once (OpenGL is limited to 12 here).
-    // We compact the full temporal window into the available samples instead of
-    // dropping the oldest frames, so increasing strength still increases blur length.
     private static final int[] compactHistoryIndices = new int[MAX_HISTORY];
     private static final float[] compactHistoryWeights = new float[MAX_HISTORY];
     private static int historyWriteIndex = 0;
@@ -389,11 +384,9 @@ public class FrameBlendingManager {
 
     private static PostChain loadAccumSimpleChain(Minecraft client, String shaderName, boolean isMax) {
         try {
-            net.minecraft.client.renderer.ShaderManager.CompilationCache cache =
-                    ((ShaderManagerAccessor) client.getShaderManager()).getCompilationCache();
-            if (cache == null) return null;
-
-            PostChain result = cache.getOrLoadPostChain(isMax ? ACCUMULATION_MAX_ID : ACCUMULATION_MIX_ID, LevelTargetBundle.MAIN_TARGETS);
+            PostChain result = client.getShaderManager().getPostChain(
+                    isMax ? ACCUMULATION_MAX_ID : ACCUMULATION_MIX_ID,
+                    LevelTargetBundle.MAIN_TARGETS);
 
             if (isMax && result != cachedAccumMaxChain) {
                 cachedAccumMaxChain = result;
@@ -496,11 +489,9 @@ public class FrameBlendingManager {
 
     private static PostChain loadFrameBlendChain(Minecraft client, int activeMaxHistory) {
         try {
-            net.minecraft.client.renderer.ShaderManager.CompilationCache cache =
-                    ((ShaderManagerAccessor) client.getShaderManager()).getCompilationCache();
-            if (cache == null) return null;
-
-            PostChain result = cache.getOrLoadPostChain(activeMaxHistory <= GL_HISTORY_LIMIT ? FRAME_BLENDING_GL_ID : FRAME_BLENDING_ID, LevelTargetBundle.MAIN_TARGETS);
+            PostChain result = client.getShaderManager().getPostChain(
+                    activeMaxHistory <= GL_HISTORY_LIMIT ? FRAME_BLENDING_GL_ID : FRAME_BLENDING_ID,
+                    LevelTargetBundle.MAIN_TARGETS);
 
             if (result != cachedCombineChain) {
                 cachedCombineChain = result;

@@ -1,7 +1,7 @@
 package net.natural.motionblur.recording;
 
 import com.mojang.blaze3d.systems.RenderSystem;
-import com.mojang.blaze3d.textures.GpuTexture;
+import com.mojang.renderpearl.api.textures.GpuTexture;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;

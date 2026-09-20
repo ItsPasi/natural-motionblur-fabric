@@ -1,13 +1,10 @@
 package net.natural.motionblur.recording;
 
-import com.mojang.blaze3d.buffers.GpuBuffer;
-import com.mojang.blaze3d.buffers.GpuBufferSlice.MappedView;
+import com.mojang.renderpearl.api.buffers.GpuBuffer;
+import com.mojang.renderpearl.api.buffers.GpuBufferSlice.MappedView;
 import com.mojang.blaze3d.pipeline.RenderTarget;
 import com.mojang.blaze3d.systems.RenderSystem;
-import com.mojang.blaze3d.textures.GpuTexture;
-import org.lwjgl.glfw.GLFW;
-import org.lwjgl.opengl.GL;
-import org.lwjgl.opengl.GLCapabilities;
+import com.mojang.renderpearl.api.textures.GpuTexture;
 import org.lwjgl.opengl.GL11;
 import org.lwjgl.opengl.GL12;
 
@@ -30,8 +27,6 @@ public final class SpoutFrameSender {
     private static int nextReadbackSlot = 0;
     private static int nextDrainSlot = 0;
 
-    private static long glWindow = 0L;
-    private static GLCapabilities glCapabilities = null;
     private static int spoutTexture = 0;
     private static int spoutTextureWidth = 0;
     private static int spoutTextureHeight = 0;
@@ -173,52 +168,14 @@ public final class SpoutFrameSender {
     }
 
     private static void uploadAndSendOpenGlTexture(ByteBuffer pixels, int width, int height) {
-        long previousContext = GLFW.glfwGetCurrentContext();
-        GLCapabilities previousCapabilities = null;
+        HiddenWglContext.State previous = HiddenWglContext.capture();
         try {
-            previousCapabilities = GL.getCapabilities();
-        } catch (Throwable ignored) {
-        }
-
-        boolean restorePreviousContext = previousContext != 0L && previousContext != glWindow;
-        try {
-            ensureOpenGlContext();
-            if (previousContext != glWindow) {
-                GLFW.glfwMakeContextCurrent(glWindow);
-                GL.setCapabilities(glCapabilities);
-            }
-
+            HiddenWglContext.makeCurrent();
             ensureOpenGlTexture(width, height, pixels);
             SpoutBridge.sendTexture(spoutTexture, width, height);
         } finally {
-            if (restorePreviousContext) {
-                GLFW.glfwMakeContextCurrent(previousContext);
-                GL.setCapabilities(previousCapabilities);
-            }
+            HiddenWglContext.restore(previous);
         }
-    }
-
-    private static void ensureOpenGlContext() {
-        if (glWindow != 0L) return;
-
-        if (!GLFW.glfwInit()) {
-            throw new IllegalStateException("GLFW is not initialized");
-        }
-
-        GLFW.glfwDefaultWindowHints();
-        GLFW.glfwWindowHint(GLFW.GLFW_VISIBLE, GLFW.GLFW_FALSE);
-        GLFW.glfwWindowHint(GLFW.GLFW_CLIENT_API, GLFW.GLFW_OPENGL_API);
-        GLFW.glfwWindowHint(GLFW.GLFW_CONTEXT_VERSION_MAJOR, 3);
-        GLFW.glfwWindowHint(GLFW.GLFW_CONTEXT_VERSION_MINOR, 2);
-        GLFW.glfwWindowHint(GLFW.GLFW_OPENGL_PROFILE, GLFW.GLFW_OPENGL_CORE_PROFILE);
-
-        glWindow = GLFW.glfwCreateWindow(1, 1, "NaturalMotionBlur Spout", 0L, 0L);
-        if (glWindow == 0L) {
-            throw new IllegalStateException("Failed to create hidden OpenGL context for Vulkan Spout output");
-        }
-
-        GLFW.glfwMakeContextCurrent(glWindow);
-        glCapabilities = GL.createCapabilities();
     }
 
     private static void ensureOpenGlTexture(int width, int height, ByteBuffer pixels) {
@@ -284,8 +241,6 @@ public final class SpoutFrameSender {
         spoutTexture = 0;
         spoutTextureWidth = 0;
         spoutTextureHeight = 0;
-        glWindow = 0L;
-        glCapabilities = null;
         VulkanGlSharedSpoutSender.discardAfterFailure();
         try {
             SpoutBridge.shutdown();
@@ -307,12 +262,13 @@ public final class SpoutFrameSender {
     public static void shutdown() {
         try {
             shutdownReadbackBuffers();
-            destroyHiddenOpenGlTextureAndContext();
+            destroyHiddenOpenGlTexture();
             warnedCpuFallback = false;
             warnedFailure = false;
             warnedImageFallback = false;
             resourceReloadActive = false;
             VulkanGlSharedSpoutSender.destroy();
+            HiddenWglContext.destroy();
             SpoutBridge.shutdown();
         } catch (Throwable ignored) {
             shutdownWithoutRenderThreadCleanup();
@@ -324,8 +280,6 @@ public final class SpoutFrameSender {
         spoutTexture = 0;
         spoutTextureWidth = 0;
         spoutTextureHeight = 0;
-        glWindow = 0L;
-        glCapabilities = null;
         warnedCpuFallback = false;
         warnedFailure = false;
         warnedImageFallback = false;
@@ -367,41 +321,17 @@ public final class SpoutFrameSender {
         nextDrainSlot = 0;
     }
 
-    private static void destroyHiddenOpenGlTextureAndContext() {
-        long previousContext = GLFW.glfwGetCurrentContext();
-        GLCapabilities previousCapabilities = null;
+    private static void destroyHiddenOpenGlTexture() {
+        HiddenWglContext.State previous = HiddenWglContext.capture();
         try {
-            previousCapabilities = GL.getCapabilities();
-        } catch (Throwable ignored) {
-        }
-
-        if (glWindow != 0L) {
-            try {
-                GLFW.glfwMakeContextCurrent(glWindow);
-                GL.setCapabilities(glCapabilities);
-                if (spoutTexture != 0) {
-                    GL11.glDeleteTextures(spoutTexture);
-                    spoutTexture = 0;
-                }
-            } catch (Throwable ignored) {
-            } finally {
-                try {
-                    if (previousContext != glWindow) {
-                        GLFW.glfwMakeContextCurrent(previousContext);
-                        GL.setCapabilities(previousCapabilities);
-                    } else {
-                        GLFW.glfwMakeContextCurrent(0L);
-                        GL.setCapabilities(null);
-                    }
-                } catch (Throwable ignored) {
-                }
-                try {
-                    GLFW.glfwDestroyWindow(glWindow);
-                } catch (Throwable ignored) {
-                }
-                glWindow = 0L;
-                glCapabilities = null;
+            HiddenWglContext.makeCurrent();
+            if (spoutTexture != 0) {
+                GL11.glDeleteTextures(spoutTexture);
+                spoutTexture = 0;
             }
+        } catch (Throwable ignored) {
+        } finally {
+            HiddenWglContext.restore(previous);
         }
 
         spoutTextureWidth = 0;

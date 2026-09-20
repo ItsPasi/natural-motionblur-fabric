@@ -1,4 +1,5 @@
 #version 330
+#extension GL_ARB_separate_shader_objects : require
 
 uniform sampler2D MainSampler;
 uniform sampler2D MainDepthSampler;
@@ -14,30 +15,16 @@ layout(std140) uniform PreEntityBlurUniforms {
     int   sampleCount;
     int   blurAlgorithm;
     int   useDepth;
-    int   depthConvention; // 0 = vanilla 26.2 (0..1 reversed-Z), 1 = Iris shader-pack (-1..1 standard depth)
 };
 
-in vec2 texCoord;
+layout(location = 0) in vec2 texCoord;
 layout(location = 0) out vec4 color;
 
-float depthToNdc(float depth) {
-    return depthConvention != 0 ? depth * 2.0 - 1.0 : depth;
-}
-float farDepthValue() {
-    return depthConvention != 0 ? 1.0 : 0.0;
-}
-float nearerDepth(float a, float b) {
-    return depthConvention != 0 ? min(a, b) : max(a, b);
-}
-
-// Hand / very-near protection.
-bool shouldProtectHand(float depth) {
-    float correctedDepth = depthConvention != 0 ? 1.0 - depth : depth;
-    return correctedDepth > 0.44;
-}
+float farDepthValue() {return 0.0;}
+float nearerDepth(float a, float b) {return max(a, b);}
 
 vec3 reproject(vec3 screenPos) {
-    vec3 ndc      = vec3(screenPos.xy * 2.0 - 1.0, depthToNdc(screenPos.z));
+    vec3 ndc      = vec3(screenPos.xy * 2.0 - 1.0, screenPos.z);
     vec4 viewPos  = projInverse * vec4(ndc, 1.0);
     vec3 worldPos = (mvInverse * vec4(viewPos.xyz / viewPos.w, 1.0)).xyz + cameraDelta;
     vec4 prevClip = prevProjection * (prevModelView * vec4(worldPos, 1.0));
@@ -58,10 +45,7 @@ void main() {
     float depth = texelFetch(MainDepthSampler, texel, 0).x;
 
     // Iris Hand Fix
-    if (shouldProtectHand(depth)) {
-        color = texture(MainSampler, texCoord);
-        return;
-    }
+    if (depth > 0.44) {color = texture(MainSampler, texCoord);return;}
 
     // Depth blend inconsistency fix
     float dilatedDepth = depth;

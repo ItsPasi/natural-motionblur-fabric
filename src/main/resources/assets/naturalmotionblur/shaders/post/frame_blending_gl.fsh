@@ -1,4 +1,5 @@
 #version 330
+#extension GL_ARB_separate_shader_objects : require
 
 uniform sampler2D Sample0Sampler;
 uniform sampler2D Sample1Sampler;
@@ -44,7 +45,7 @@ layout(std140) uniform FrameBlendParamsUniforms {
     float padding1;
 };
 
-in vec2 texCoord;
+layout(location = 0) in vec2 texCoord;
 layout(location = 0) out vec4 color;
 
 vec3 srgbToLinear(vec3 c) {

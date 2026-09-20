@@ -6,13 +6,10 @@
   "mixins": [
     "MixinLevelRenderer",
     "MixinGameRenderer",
+    "MixinVulkanBackend",
     "PostPassAccessor",
     "PostChainAccessor",
-    "ShaderManagerAccessor",
-    "MixinMinecraft",
-    "GameRendererAccessor",
-    "LevelTargetBundleAccessor",
-    "MixinVulkanBackend"
+    "MixinMinecraft"
   ],
   "injectors": {
     "defaultRequire": 1

@@ -1,20 +1,17 @@
 package net.natural.motionblur.recording;
 
-import com.mojang.blaze3d.GpuFormat;
+import com.mojang.renderpearl.api.GpuFormat;
 import com.mojang.blaze3d.systems.RenderSystem;
-import com.mojang.blaze3d.textures.GpuTexture;
-import com.mojang.blaze3d.vulkan.VulkanCommandEncoder;
-import com.mojang.blaze3d.vulkan.VulkanConst;
-import com.mojang.blaze3d.vulkan.VulkanDevice;
-import com.mojang.blaze3d.vulkan.VulkanGpuTexture;
+import com.mojang.renderpearl.api.textures.GpuTexture;
+import com.mojang.renderpearl.backend.vulkan.VulkanCommandEncoder;
+import com.mojang.renderpearl.backend.vulkan.VulkanConst;
+import com.mojang.renderpearl.backend.vulkan.VulkanDevice;
+import com.mojang.renderpearl.backend.vulkan.VulkanGpuTexture;
 import org.lwjgl.PointerBuffer;
-import org.lwjgl.glfw.GLFW;
 import org.lwjgl.opengl.EXTMemoryObject;
 import org.lwjgl.opengl.EXTMemoryObjectWin32;
 import org.lwjgl.opengl.EXTSemaphore;
 import org.lwjgl.opengl.EXTSemaphoreWin32;
-import org.lwjgl.opengl.GL;
-import org.lwjgl.opengl.GLCapabilities;
 import org.lwjgl.opengl.GL11;
 import org.lwjgl.opengl.GL12;
 import org.lwjgl.system.MemoryStack;
@@ -57,8 +54,6 @@ final class VulkanGlSharedSpoutSender {
     private static boolean loggedSemaphoreSync = false;
 
     private static VulkanDevice device = null;
-    private static long glWindow = 0L;
-    private static GLCapabilities glCapabilities = null;
 
     private static int width = 0;
     private static int height = 0;
@@ -109,6 +104,15 @@ final class VulkanGlSharedSpoutSender {
     private static String compactError(Throwable t) {
         String message = t.getMessage();
         return t.getClass().getSimpleName() + (message != null ? ": " + message : "");
+    }
+
+    private static void ensureOpenGlContext() {
+        HiddenWglContext.State previous = HiddenWglContext.capture();
+        try {
+            HiddenWglContext.makeCurrent();
+        } finally {
+            HiddenWglContext.restore(previous);
+        }
     }
 
     private static VulkanDevice getVulkanDevice() {
@@ -264,15 +268,9 @@ final class VulkanGlSharedSpoutSender {
     }
 
     private static void importVulkanMemoryIntoOpenGl(SharedSlot slot, int glInternalFormat, int imageWidth, int imageHeight) {
-        long previousContext = GLFW.glfwGetCurrentContext();
-        GLCapabilities previousCapabilities = currentCapabilitiesOrNull();
-        boolean restorePreviousContext = previousContext != 0L && previousContext != glWindow;
-
+        HiddenWglContext.State previous = HiddenWglContext.capture();
         try {
-            if (previousContext != glWindow) {
-                GLFW.glfwMakeContextCurrent(glWindow);
-                GL.setCapabilities(glCapabilities);
-            }
+            HiddenWglContext.makeCurrent();
 
             long handle = exportVulkanMemoryHandle(slot);
             slot.glMemoryObject = EXTMemoryObject.glCreateMemoryObjectsEXT();
@@ -286,32 +284,20 @@ final class VulkanGlSharedSpoutSender {
             GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_WRAP_T, GL12.GL_CLAMP_TO_EDGE);
             EXTMemoryObject.glTexStorageMem2DEXT(GL11.GL_TEXTURE_2D, 1, glInternalFormat, imageWidth, imageHeight, slot.glMemoryObject, 0L);
         } finally {
-            if (restorePreviousContext) {
-                GLFW.glfwMakeContextCurrent(previousContext);
-                GL.setCapabilities(previousCapabilities);
-            }
+            HiddenWglContext.restore(previous);
         }
     }
 
     private static void importVulkanSemaphoreIntoOpenGl(SharedSlot slot) {
-        long previousContext = GLFW.glfwGetCurrentContext();
-        GLCapabilities previousCapabilities = currentCapabilitiesOrNull();
-        boolean restorePreviousContext = previousContext != 0L && previousContext != glWindow;
-
+        HiddenWglContext.State previous = HiddenWglContext.capture();
         try {
-            if (previousContext != glWindow) {
-                GLFW.glfwMakeContextCurrent(glWindow);
-                GL.setCapabilities(glCapabilities);
-            }
+            HiddenWglContext.makeCurrent();
 
             long handle = exportVulkanSemaphoreHandle(slot);
             slot.glSemaphore = EXTSemaphore.glGenSemaphoresEXT();
             EXTSemaphoreWin32.glImportSemaphoreWin32HandleEXT(slot.glSemaphore, GL_HANDLE_TYPE_OPAQUE_WIN32_EXT, handle);
         } finally {
-            if (restorePreviousContext) {
-                GLFW.glfwMakeContextCurrent(previousContext);
-                GL.setCapabilities(previousCapabilities);
-            }
+            HiddenWglContext.restore(previous);
         }
     }
 
@@ -434,8 +420,19 @@ final class VulkanGlSharedSpoutSender {
             SharedSlot slot = slots[index];
             if (slot == null || !slot.pending) continue;
 
-            waitForVulkanCopyInOpenGl(slot);
-            SpoutBridge.sendTexture(slot.glTexture, frameWidth, frameHeight);
+            HiddenWglContext.State previous = HiddenWglContext.capture();
+            try {
+                HiddenWglContext.makeCurrent();
+                EXTSemaphore.glWaitSemaphoreEXT(
+                        slot.glSemaphore,
+                        new int[0],
+                        new int[]{slot.glTexture},
+                        new int[]{GL_LAYOUT_GENERAL_EXT});
+                SpoutBridge.sendTexture(slot.glTexture, frameWidth, frameHeight);
+            } finally {
+                HiddenWglContext.restore(previous);
+            }
+
             slot.pending = false;
             nextDrainSlot = (index + 1) % SHARED_RING_SIZE;
             return;
@@ -463,86 +460,24 @@ final class VulkanGlSharedSpoutSender {
     }
 
     private static void waitForVulkanCopyInOpenGl(SharedSlot slot) {
-        long previousContext = GLFW.glfwGetCurrentContext();
-        GLCapabilities previousCapabilities = currentCapabilitiesOrNull();
-        boolean restorePreviousContext = previousContext != 0L && previousContext != glWindow;
-
+        HiddenWglContext.State previous = HiddenWglContext.capture();
         try {
-            if (previousContext != glWindow) {
-                GLFW.glfwMakeContextCurrent(glWindow);
-                GL.setCapabilities(glCapabilities);
-            }
-
-            EXTSemaphore.glWaitSemaphoreEXT(slot.glSemaphore, new int[0], new int[]{slot.glTexture}, new int[]{GL_LAYOUT_GENERAL_EXT});
+            HiddenWglContext.makeCurrent();
+            EXTSemaphore.glWaitSemaphoreEXT(
+                    slot.glSemaphore,
+                    new int[0],
+                    new int[]{slot.glTexture},
+                    new int[]{GL_LAYOUT_GENERAL_EXT});
         } finally {
-            if (restorePreviousContext) {
-                GLFW.glfwMakeContextCurrent(previousContext);
-                GL.setCapabilities(previousCapabilities);
-            }
-        }
-    }
-
-    private static void ensureOpenGlContext() {
-        if (glWindow != 0L) return;
-
-        if (!GLFW.glfwInit()) {
-            throw new IllegalStateException("GLFW is not initialized");
-        }
-
-        GLFW.glfwDefaultWindowHints();
-        GLFW.glfwWindowHint(GLFW.GLFW_VISIBLE, GLFW.GLFW_FALSE);
-        GLFW.glfwWindowHint(GLFW.GLFW_CLIENT_API, GLFW.GLFW_OPENGL_API);
-        GLFW.glfwWindowHint(GLFW.GLFW_CONTEXT_VERSION_MAJOR, 3);
-        GLFW.glfwWindowHint(GLFW.GLFW_CONTEXT_VERSION_MINOR, 2);
-        GLFW.glfwWindowHint(GLFW.GLFW_OPENGL_PROFILE, GLFW.GLFW_OPENGL_CORE_PROFILE);
-
-        glWindow = GLFW.glfwCreateWindow(1, 1, "NaturalMotionBlur Spout", 0L, 0L);
-        if (glWindow == 0L) {
-            throw new IllegalStateException("Failed to create hidden OpenGL context for Vulkan Spout output");
-        }
-
-        GLFW.glfwMakeContextCurrent(glWindow);
-        glCapabilities = GL.createCapabilities();
-    }
-
-    private static GLCapabilities currentCapabilitiesOrNull() {
-        try {
-            return GL.getCapabilities();
-        } catch (Throwable ignored) {
-            return null;
+            HiddenWglContext.restore(previous);
         }
     }
 
     static void destroy() {
         try {
             destroySharedTextures();
-
-            long previousContext = GLFW.glfwGetCurrentContext();
-            GLCapabilities previousCapabilities = currentCapabilitiesOrNull();
-            if (glWindow != 0L) {
-                long destroyedWindow = glWindow;
-                try {
-                    GLFW.glfwMakeContextCurrent(glWindow);
-                    GL.setCapabilities(glCapabilities);
-                } catch (Throwable ignored) {
-                }
-                try {
-                    GLFW.glfwDestroyWindow(glWindow);
-                } catch (Throwable ignored) {
-                }
-                glWindow = 0L;
-                glCapabilities = null;
-                if (previousContext != 0L && previousContext != destroyedWindow) {
-                    GLFW.glfwMakeContextCurrent(previousContext);
-                    GL.setCapabilities(previousCapabilities);
-                } else {
-                    GLFW.glfwMakeContextCurrent(0L);
-                    GL.setCapabilities(null);
-                }
-            }
         } catch (Throwable ignored) {
         }
-
         discardWithoutRenderThreadCleanup();
     }
 
@@ -562,8 +497,6 @@ final class VulkanGlSharedSpoutSender {
     static void discardWithoutRenderThreadCleanup() {
         Arrays.fill(slots, null);
         device = null;
-        glWindow = 0L;
-        glCapabilities = null;
         width = 0;
         height = 0;
         format = null;
@@ -579,8 +512,6 @@ final class VulkanGlSharedSpoutSender {
     private static void discardSharedTexturesAfterFailure() {
         Arrays.fill(slots, null);
         device = null;
-        glWindow = 0L;
-        glCapabilities = null;
         width = 0;
         height = 0;
         format = null;
@@ -589,38 +520,28 @@ final class VulkanGlSharedSpoutSender {
     }
 
     private static void destroySharedTextures() {
-        long previousContext = GLFW.glfwGetCurrentContext();
-        GLCapabilities previousCapabilities = currentCapabilitiesOrNull();
-        boolean restorePreviousContext = previousContext != 0L && previousContext != glWindow;
+        HiddenWglContext.State previous = HiddenWglContext.capture();
 
-        if (glWindow != 0L) {
-            try {
-                if (previousContext != glWindow) {
-                    GLFW.glfwMakeContextCurrent(glWindow);
-                    GL.setCapabilities(glCapabilities);
+        try {
+            HiddenWglContext.makeCurrent();
+            for (SharedSlot slot : slots) {
+                if (slot == null) continue;
+                if (slot.glTexture != 0) {
+                    GL11.glDeleteTextures(slot.glTexture);
+                    slot.glTexture = 0;
                 }
-                for (SharedSlot slot : slots) {
-                    if (slot == null) continue;
-                    if (slot.glTexture != 0) {
-                        GL11.glDeleteTextures(slot.glTexture);
-                        slot.glTexture = 0;
-                    }
-                    if (slot.glSemaphore != 0) {
-                        EXTSemaphore.glDeleteSemaphoresEXT(slot.glSemaphore);
-                        slot.glSemaphore = 0;
-                    }
-                    if (slot.glMemoryObject != 0) {
-                        EXTMemoryObject.glDeleteMemoryObjectsEXT(slot.glMemoryObject);
-                        slot.glMemoryObject = 0;
-                    }
+                if (slot.glSemaphore != 0) {
+                    EXTSemaphore.glDeleteSemaphoresEXT(slot.glSemaphore);
+                    slot.glSemaphore = 0;
                 }
-            } catch (Throwable ignored) {
-            } finally {
-                if (restorePreviousContext) {
-                    GLFW.glfwMakeContextCurrent(previousContext);
-                    GL.setCapabilities(previousCapabilities);
+                if (slot.glMemoryObject != 0) {
+                    EXTMemoryObject.glDeleteMemoryObjectsEXT(slot.glMemoryObject);
+                    slot.glMemoryObject = 0;
                 }
             }
+        } catch (Throwable ignored) {
+        } finally {
+            HiddenWglContext.restore(previous);
         }
 
         if (device != null) {

@@ -3,7 +3,6 @@ package net.natural.motionblur.util;
 import com.mojang.blaze3d.pipeline.RenderTarget;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.GameRenderer;
-import net.natural.motionblur.mixin.GameRendererAccessor;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
@@ -52,7 +51,7 @@ public final class ClientRenderTargets {
 
     private static RenderTarget tryGameRendererInvoker(GameRenderer gameRenderer) {
         try {
-            RenderTarget target = ((GameRendererAccessor)gameRenderer).naturalMotionBlur$mainRenderTarget();
+            RenderTarget target = gameRenderer.mainRenderTarget();
             if (isUsable(target)) return target;
         } catch (Throwable ignored) {
         }

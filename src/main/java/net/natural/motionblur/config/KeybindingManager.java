@@ -11,12 +11,11 @@ public class KeybindingManager {
     public static void registerKeybindings() {
         toggleKeybinding = KeyMappingHelper.registerKeyMapping(new KeyMapping(
                 "Toggle Motion Blur",
-                InputConstants.Type.KEYSYM,
+                InputConstants.Type.KEYBOARD,
                 InputConstants.UNKNOWN.getValue(),
                 KeyMapping.Category.MISC
         ));
 
-        // Register tick event to check for keybinding presses
         ClientTickEvents.START_CLIENT_TICK.register(client -> {
             if (toggleKeybinding.consumeClick()) {
                 toggleMotionBlur();

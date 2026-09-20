@@ -1,11 +1,11 @@
 package net.natural.motionblur.recording;
 
-import com.mojang.blaze3d.buffers.GpuBuffer;
+import com.mojang.renderpearl.api.buffers.GpuBuffer;
 import com.mojang.blaze3d.pipeline.MainTarget;
 import com.mojang.blaze3d.pipeline.RenderTarget;
 import com.mojang.blaze3d.resource.GraphicsResourceAllocator;
 import com.mojang.blaze3d.systems.RenderSystem;
-import com.mojang.blaze3d.textures.GpuTextureView;
+import com.mojang.renderpearl.api.textures.GpuTextureView;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.LevelTargetBundle;
 import net.minecraft.client.renderer.PostChain;
@@ -17,12 +17,12 @@ import net.natural.motionblur.config.ConfigEntries;
 import net.natural.motionblur.config.ConfigManager;
 import net.natural.motionblur.mixin.PostChainAccessor;
 import net.natural.motionblur.mixin.PostPassAccessor;
-import net.natural.motionblur.mixin.ShaderManagerAccessor;
 import net.natural.motionblur.util.ClientRenderTargets;
 import net.natural.motionblur.util.GpuBufferUtil;
 import org.jspecify.annotations.NonNull;
 import org.jspecify.annotations.Nullable;
-import org.lwjgl.glfw.GLFW;
+import org.lwjgl.sdl.SDLMouse;
+import org.lwjgl.system.MemoryStack;
 import java.lang.reflect.Field;
 import java.util.Arrays;
 import java.util.List;
@@ -75,9 +75,6 @@ public class RecordingShaderManager {
     private static float   recPrevRawCursorX       = 0;
     private static float   recPrevRawCursorY       = 0;
     private static boolean recPrevRawCursorVisible = false;
-
-    private static long    cachedGlfwHandle        = 0;
-    private static boolean glfwHandleResolved      = false;
 
     private static boolean warnedCaptureFailure    = false;
     private static long    retryCaptureAfterNanos  = 0L;
@@ -412,58 +409,36 @@ public class RecordingShaderManager {
 
     private static CursorState getCursorState(Minecraft mc, int renderWidth, int renderHeight) {
         try {
-            long window = getGlfwWindowHandle(mc);
-            if (window == 0) return CursorState.HIDDEN;
+            long window = mc.getWindow().handle();
+            if (window == 0L) return CursorState.HIDDEN;
+            if (SDLMouse.SDL_GetWindowRelativeMouseMode(window) || !SDLMouse.SDL_CursorVisible()) {
+                return CursorState.HIDDEN;
+            }
 
-            int cursorMode = GLFW.glfwGetInputMode(window, GLFW.GLFW_CURSOR);
-            if (cursorMode == GLFW.GLFW_CURSOR_DISABLED) return CursorState.HIDDEN;
-
-            double[] xArr = new double[1];
-            double[] yArr = new double[1];
-            GLFW.glfwGetCursorPos(window, xArr, yArr);
+            float rawX;
+            float rawY;
+            try (MemoryStack stack = MemoryStack.stackPush()) {
+                var x = stack.floats(0.0f);
+                var y = stack.floats(0.0f);
+                SDLMouse.SDL_GetMouseState(x, y);
+                rawX = x.get(0);
+                rawY = y.get(0);
+            }
 
             double winW = mc.getWindow().getWidth();
             double winH = mc.getWindow().getHeight();
             if (winW <= 0 || winH <= 0) return CursorState.HIDDEN;
 
-            float x = (float) (xArr[0] * renderWidth / winW);
-            float y = (float) (yArr[0] * renderHeight / winH);
-            if (x < -32 || y < -32 || x > renderWidth + 32 || y > renderHeight + 32)
+            float x = (float) (rawX * renderWidth / winW);
+            float y = (float) (rawY * renderHeight / winH);
+            if (x < -32 || y < -32 || x > renderWidth + 32 || y > renderHeight + 32) {
                 return CursorState.HIDDEN;
+            }
 
             return new CursorState(x, y, 1.0f, true);
         } catch (Throwable ignored) {
             return CursorState.HIDDEN;
         }
-    }
-
-    private static long getGlfwWindowHandle(Minecraft mc) {
-        if (glfwHandleResolved) return cachedGlfwHandle;
-        try {
-            Object windowObj = mc.getWindow();
-            Class<?> type = windowObj.getClass();
-            while (type != null) {
-                for (Field f : type.getDeclaredFields()) {
-                    if (f.getType() == long.class) {
-                        f.setAccessible(true);
-                        long val = f.getLong(windowObj);
-                        if (val > 0) {
-                            try {
-                                GLFW.glfwGetInputMode(val, GLFW.GLFW_CURSOR);
-                                cachedGlfwHandle = val;
-                                glfwHandleResolved = true;
-                                return cachedGlfwHandle;
-                            } catch (Throwable ignored) {
-                            }
-                        }
-                    }
-                }
-                type = type.getSuperclass();
-            }
-        } catch (Throwable ignored) {
-        }
-        glfwHandleResolved = true;
-        return 0;
     }
 
     private record CursorState(float x, float y, float scale, boolean visible) {
@@ -565,8 +540,6 @@ public class RecordingShaderManager {
         pauseCaptureUntilNanos = 0L;
         resourceReloadActive = false;
         warnedCaptureFailure = false;
-        cachedGlfwHandle = 0;
-        glfwHandleResolved = false;
 
         if (cleanFrameTarget != null) { destroyTargetBuffers(cleanFrameTarget); cleanFrameTarget = null; }
         if (recordingTarget != null) { destroyTargetBuffers(recordingTarget); recordingTarget = null; }
@@ -587,8 +560,6 @@ public class RecordingShaderManager {
         savedAllocator = null;
         cleanFrameTarget = null;
         recordingTarget = null;
-        cachedGlfwHandle = 0;
-        glfwHandleResolved = false;
         for (int i = 0; i < recHistoryTargets.length; i++) {
             recHistoryTargets[i] = null;
             recHistoryInputs[i] = null;
@@ -708,10 +679,7 @@ public class RecordingShaderManager {
 
     private static PostChain loadChain(Minecraft mc, PostChain cached, String shaderPath) {
         try {
-            net.minecraft.client.renderer.ShaderManager.CompilationCache cache =
-                    ((ShaderManagerAccessor) mc.getShaderManager()).getCompilationCache();
-            if (cache == null) return null;
-            PostChain result = cache.getOrLoadPostChain(
+            PostChain result = mc.getShaderManager().getPostChain(
                     Identifier.fromNamespaceAndPath(NaturalMotionBlurMod.ID, shaderPath),
                     LevelTargetBundle.MAIN_TARGETS);
             if (result != cached) {

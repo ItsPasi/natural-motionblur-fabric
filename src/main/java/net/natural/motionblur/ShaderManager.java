@@ -1,7 +1,7 @@
 package net.natural.motionblur;
 
-import com.mojang.blaze3d.GpuFormat;
-import com.mojang.blaze3d.buffers.GpuBuffer;
+import com.mojang.renderpearl.api.GpuFormat;
+import com.mojang.renderpearl.api.buffers.GpuBuffer;
 import com.mojang.blaze3d.framegraph.FrameGraphBuilder;
 import com.mojang.blaze3d.pipeline.RenderTarget;
 import com.mojang.blaze3d.pipeline.TextureTarget;
@@ -16,7 +16,6 @@ import net.natural.motionblur.config.ConfigEntries;
 import net.natural.motionblur.config.ConfigManager;
 import net.natural.motionblur.mixin.PostChainAccessor;
 import net.natural.motionblur.mixin.PostPassAccessor;
-import net.natural.motionblur.mixin.ShaderManagerAccessor;
 import net.natural.motionblur.shader.BlurStrengthCalculator;
 import net.natural.motionblur.shader.CameraState;
 import net.natural.motionblur.shader.FrameBlendingManager;
@@ -26,6 +25,7 @@ import net.natural.motionblur.util.GpuBufferUtil;
 import net.natural.motionblur.util.IrisCompat;
 import net.natural.motionblur.util.ManagedUniformBuffer;
 import org.joml.Matrix4f;
+import org.joml.Matrix4fc;
 import org.jspecify.annotations.NonNull;
 
 import java.util.HashSet;
@@ -38,6 +38,8 @@ public class ShaderManager {
     private static final FrameTimer             frameTimer   = new FrameTimer();
     private static final CameraState            cameraState  = new CameraState();
     private static final BlurStrengthCalculator strengthCalc = new BlurStrengthCalculator();
+    private static final Matrix4f capturedWorldProjection = new Matrix4f();
+    private static boolean capturedWorldProjectionReady = false;
 
     private static GraphicsResourceAllocator frameAllocator = null;
     private static boolean deferredTemporalBlurApplied = false;
@@ -85,6 +87,17 @@ public class ShaderManager {
         FrameBlendingManager.invalidate();
     }
 
+    public static void captureWorldProjection(Matrix4fc projection) {
+        capturedWorldProjection.set(projection);
+        capturedWorldProjectionReady = true;
+    }
+
+    public static void useCapturedWorldProjection(Matrix4f projectionOut) {
+        if (!capturedWorldProjectionReady) return;
+        projectionOut.set(capturedWorldProjection);
+        capturedWorldProjectionReady = false;
+    }
+
     public static void setFrameMotionBlur(Matrix4f modelView, Matrix4f prevModelView,
                                           Matrix4f projection, Matrix4f prevProjection,
                                           float dx, float dy, float dz) {
@@ -93,6 +106,7 @@ public class ShaderManager {
 
     public static void applyPostRenderVelocityOnly() { if (shouldRun()) applyPostRenderVelocityOnlyInternal(); }
     public static void applyPreEntityVelocityOnly(boolean specialSingleBlur) { if (shouldRun()) applyPreEntityVelocityOnlyInternal(specialSingleBlur); }
+
     public static void applyDeferredIrisPreEntityVelocityOnly(boolean specialSingleBlur) {
         if (shouldRun()) applyDeferredIrisPreEntityVelocityOnlyInternal(specialSingleBlur);
     }
@@ -171,7 +185,7 @@ public class ShaderManager {
                 if (irisPreDepthTarget != null) irisPreDepthTarget.destroyBuffers();
                 irisPreDepthTarget = new TextureTarget(
                         "NaturalMotionBlur / Iris pre-entity depth",
-                        main.width, main.height, true, GpuFormat.RGBA8_UNORM);
+                        main.width, main.height, GpuFormat.RGBA8_UNORM, GpuFormat.D32_FLOAT);
             }
 
             irisPreDepthTarget.copyDepthFrom(main);
@@ -338,10 +352,7 @@ public class ShaderManager {
 
     private static PostChain loadProcessor(Minecraft client, String shaderName, String displayName, Set<Identifier> allowedTargets) {
         try {
-            net.minecraft.client.renderer.ShaderManager.CompilationCache cache =
-                    ((ShaderManagerAccessor) client.getShaderManager()).getCompilationCache();
-            if (cache == null) return null;
-            PostChain chain = cache.getOrLoadPostChain(
+            PostChain chain = client.getShaderManager().getPostChain(
                     Identifier.fromNamespaceAndPath(NaturalMotionBlurMod.ID, shaderName),
                     allowedTargets);
             loadErrorLogged.remove(shaderName);
@@ -391,7 +402,6 @@ public class ShaderManager {
                 b.putInt(sampleAmount);
                 b.putInt(blurAlgorithm);
                 b.putInt(useDepthMode);
-                b.putInt(IrisCompat.getDepthConvention());
             });
             return true;
         } catch (RuntimeException e) {

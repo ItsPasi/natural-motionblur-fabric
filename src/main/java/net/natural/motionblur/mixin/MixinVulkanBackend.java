@@ -1,18 +1,18 @@
 package net.natural.motionblur.mixin;
 
-import com.mojang.blaze3d.vulkan.VulkanPhysicalDevice;
+import com.mojang.renderpearl.backend.vulkan.VulkanPhysicalDevice;
+import com.mojang.renderpearl.backend.vulkan.init.FeatureSet;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.ModifyArgs;
 import org.spongepowered.asm.mixin.injection.invoke.arg.Args;
 
-import java.util.Collection;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.Set;
 
-@Mixin(targets = "com.mojang.blaze3d.vulkan.VulkanBackend")
+@Mixin(targets = "com.mojang.renderpearl.backend.vulkan.VulkanBackend", remap = false)
 public abstract class MixinVulkanBackend {
     @Unique private static final String EXTERNAL_SHARING_PROPERTY = "naturalmotionblur.vulkanSpoutExternal";
 
@@ -34,35 +34,43 @@ public abstract class MixinVulkanBackend {
     @Unique private static boolean loggedDisabled = false;
 
     @ModifyArgs(
-            method = "createDevice*",
-            at = @At(value = "INVOKE", target = "Lcom/mojang/blaze3d/vulkan/VulkanBackend;createDevice(Ljava/util/Collection;Lcom/mojang/blaze3d/vulkan/VulkanPhysicalDevice;Ljava/util/Set;)Lorg/lwjgl/vulkan/VkDevice;"),
+            method = "createDevice(Lcom/mojang/renderpearl/api/device/GpuDebugOptions;)Lcom/mojang/renderpearl/api/device/GpuDevice;",
+            at = @At(
+                    value = "INVOKE",
+                    target = "Lcom/mojang/renderpearl/backend/vulkan/VulkanBackend;createDevice(Lcom/mojang/renderpearl/backend/vulkan/init/FeatureSet;Lcom/mojang/renderpearl/backend/vulkan/VulkanPhysicalDevice;)Lorg/lwjgl/vulkan/VkDevice;"
+            ),
             remap = false
     )
-    private void naturalmotionblur$addExternalSharingExtensionsToVkDevice(Args args) {
-        Collection<String> extensions = args.get(0);
+    private void naturalMotionBlur$addExternalSharingExtensionsToVkDevice(Args args) {
+        FeatureSet enabledFeatures = args.get(0);
         VulkanPhysicalDevice physicalDevice = args.get(1);
-        args.set(0, naturalmotionblur$addExternalSharingExtensions(extensions, physicalDevice));
+        args.set(0, naturalMotionBlur$addExternalSharingExtensions(enabledFeatures, physicalDevice));
     }
 
     @ModifyArgs(
-            method = "createDevice*",
-            at = @At(value = "INVOKE", target = "Lcom/mojang/blaze3d/vulkan/VulkanDevice;<init>(Lcom/mojang/blaze3d/shaders/ShaderSource;Lcom/mojang/blaze3d/vulkan/VulkanInstance;Lcom/mojang/blaze3d/vulkan/VulkanPhysicalDevice;Ljava/util/Set;Lorg/lwjgl/vulkan/VkDevice;JLcom/mojang/blaze3d/vulkan/checkpoints/CheckpointExtension;)V"),
+            method = "createDevice(Lcom/mojang/renderpearl/api/device/GpuDebugOptions;)Lcom/mojang/renderpearl/api/device/GpuDevice;",
+            at = @At(
+                    value = "INVOKE",
+                    target = "Lcom/mojang/renderpearl/backend/vulkan/VulkanDevice;<init>(Lcom/mojang/renderpearl/backend/vulkan/VulkanInstance;Lcom/mojang/renderpearl/backend/vulkan/VulkanPhysicalDevice;Lcom/mojang/renderpearl/backend/vulkan/init/FeatureSet;Lorg/lwjgl/vulkan/VkDevice;JLcom/mojang/renderpearl/backend/vulkan/checkpoints/CheckpointExtension;)V"
+            ),
             remap = false
     )
-    private void naturalmotionblur$addExternalSharingExtensionsToDeviceInfo(Args args) {
-        VulkanPhysicalDevice physicalDevice = args.get(2);
-        Set<String> extensions = args.get(3);
-        args.set(3, naturalmotionblur$addExternalSharingExtensions(extensions, physicalDevice));
+    private void naturalMotionBlur$addExternalSharingExtensionsToDeviceInfo(Args args) {
+        VulkanPhysicalDevice physicalDevice = args.get(1);
+        FeatureSet enabledFeatures = args.get(2);
+        args.set(2, naturalMotionBlur$addExternalSharingExtensions(enabledFeatures, physicalDevice));
     }
 
-    @Unique private static Set<String> naturalmotionblur$addExternalSharingExtensions(Collection<String> extensions, VulkanPhysicalDevice physicalDevice) {
-        Set<String> requested = new HashSet<>(extensions);
-        if (!naturalmotionblur$externalSharingEnabled()) {
+    @Unique
+    private static FeatureSet naturalMotionBlur$addExternalSharingExtensions(
+            FeatureSet enabledFeatures,
+            VulkanPhysicalDevice physicalDevice) {
+        if (!naturalMotionBlur$externalSharingEnabled()) {
             if (!loggedDisabled) {
                 loggedDisabled = true;
                 System.out.println("[NMB] Vulkan Spout external sharing disabled.");
             }
-            return requested;
+            return enabledFeatures;
         }
 
         for (String extension : REQUIRED_EXTERNAL_SHARING_EXTENSIONS) {
@@ -71,27 +79,29 @@ public abstract class MixinVulkanBackend {
                     loggedUnsupported = true;
                     System.out.println("[NMB] Vulkan Spout external sharing unavailable; missing " + extension + ".");
                 }
-                return requested;
+                return enabledFeatures;
             }
         }
 
-        Collections.addAll(requested, REQUIRED_EXTERNAL_SHARING_EXTENSIONS);
-
+        Set<String> extensions = new HashSet<>();
+        Collections.addAll(extensions, REQUIRED_EXTERNAL_SHARING_EXTENSIONS);
         for (String extension : OPTIONAL_EXTERNAL_SHARING_EXTENSIONS) {
-            if (physicalDevice.hasDeviceExtension(extension)) {
-                requested.add(extension);
-            }
+            if (physicalDevice.hasDeviceExtension(extension)) extensions.add(extension);
         }
 
         if (!loggedRequest) {
             loggedRequest = true;
             System.out.println("[NMB] Vulkan Spout external sharing enabled.");
         }
-        return requested;
+
+        return enabledFeatures.composite(new FeatureSet(
+                "NaturalMotionBlur Spout external sharing",
+                extensions,
+                Set.of()));
     }
 
     @Unique
-    private static boolean naturalmotionblur$externalSharingEnabled() {
+    private static boolean naturalMotionBlur$externalSharingEnabled() {
         return !"false".equalsIgnoreCase(System.getProperty(EXTERNAL_SHARING_PROPERTY));
     }
 }
