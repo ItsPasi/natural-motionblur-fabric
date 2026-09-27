@@ -106,7 +106,7 @@ public class ShaderManager {
         float dx = cameraState.getDx(), dy = cameraState.getDy(), dz = cameraState.getDz();
         float strength = blur.strength();
         int sampleAmount = blur.sampleAmount();
-        int blurAlgorithm = config.blurAlgorithm.ordinal();
+        int blurProfile = config.blurProfile.ordinal();
 
         Consumer<RenderPass> uniformSetter = (RenderPass rp) -> {
             trySetUniform(rp, "mvInverse",         mvInv);
@@ -119,7 +119,7 @@ public class ShaderManager {
             trySetUniform(rp, "BlendFactor",       new float[]{strength});
             trySetUniform(rp, "sampleCount",       new int[]{sampleAmount});
             trySetUniform(rp, "motionBlurSamples", new int[]{sampleAmount});
-            trySetUniform(rp, "blurAlgorithm",     new int[]{blurAlgorithm});
+            trySetUniform(rp, "blurProfile",       new int[]{blurProfile});
             trySetUniform(rp, "useDepth",          new int[]{1});
         };
 
