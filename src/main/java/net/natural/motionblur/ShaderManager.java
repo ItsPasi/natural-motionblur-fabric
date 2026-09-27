@@ -143,12 +143,12 @@ public class ShaderManager {
 
         float viewW = main.width;
         float viewH = main.height;
-        int algo = config.blurAlgorithm.ordinal();
+        int blurProfile = config.blurProfile.ordinal();
 
         PostChain processor = specialSingleBlur ? getF5Processor(client) : getPreProcessor(client);
         ManagedUniformBuffer ubo = specialSingleBlur ? f5EntityUBO : preEntityUBO;
         if (processor != null && writeUniforms(processor, "PreEntityBlurUniforms", ubo,
-                blur.strength(), viewW, viewH, algo, blur.sampleAmount())) {
+                blur.strength(), viewW, viewH, blurProfile, blur.sampleAmount())) {
             try {
                 processor.process(main, frameAllocator);
             } catch (RuntimeException e) {
@@ -210,7 +210,7 @@ public class ShaderManager {
 
         int mode = specialSingleBlur ? 2 : 1;
         if (writeUniforms(processor, "PreEntityBlurUniforms", irisDeferredPreUBO,
-                blur.strength(), main.width, main.height, config.blurAlgorithm.ordinal(), blur.sampleAmount(), mode)) {
+                blur.strength(), main.width, main.height, config.blurProfile.ordinal(), blur.sampleAmount(), mode)) {
             try {
                 runWithIrisPreDepth(processor, main, irisPreDepthTarget);
                 irisDeferredApplyErrorLogged = false;
@@ -265,11 +265,11 @@ public class ShaderManager {
         RenderTarget main = ClientRenderTargets.getMain(client);
         float viewW = main.width;
         float viewH = main.height;
-        int   algo  = config.blurAlgorithm.ordinal();
+        int   blurProfile = config.blurProfile.ordinal();
 
         PostChain p = getPostProcessor(client);
         if (p != null) {
-            writeAndRun(p, blur.strength(), viewW, viewH, algo, blur.sampleAmount(), client);
+            writeAndRun(p, blur.strength(), viewW, viewH, blurProfile, blur.sampleAmount(), client);
         }
     }
 
@@ -355,8 +355,8 @@ public class ShaderManager {
 
     // UBO writing
 
-    private static void writeAndRun(PostChain processor, float blendFactor, float viewW, float viewH, int blurAlgorithm, int sampleAmount, Minecraft client) {
-        if (writeUniforms(processor, "PostRenderBlurUniforms", ShaderManager.postRenderUBO, blendFactor, viewW, viewH, blurAlgorithm, sampleAmount)) {
+    private static void writeAndRun(PostChain processor, float blendFactor, float viewW, float viewH, int blurProfile, int sampleAmount, Minecraft client) {
+        if (writeUniforms(processor, "PostRenderBlurUniforms", ShaderManager.postRenderUBO, blendFactor, viewW, viewH, blurProfile, sampleAmount)) {
             try {
                 processor.process(ClientRenderTargets.getMain(client), frameAllocator);
             } catch (RuntimeException e) {
@@ -366,11 +366,11 @@ public class ShaderManager {
         }
     }
 
-    private static boolean writeUniforms(PostChain processor, String uboKey, ManagedUniformBuffer managedUBO, float blendFactor, float viewW, float viewH, int blurAlgorithm, int sampleAmount) {
-        return writeUniforms(processor, uboKey, managedUBO, blendFactor, viewW, viewH, blurAlgorithm, sampleAmount, 1);
+    private static boolean writeUniforms(PostChain processor, String uboKey, ManagedUniformBuffer managedUBO, float blendFactor, float viewW, float viewH, int blurProfile, int sampleAmount) {
+        return writeUniforms(processor, uboKey, managedUBO, blendFactor, viewW, viewH, blurProfile, sampleAmount, 1);
     }
 
-    private static boolean writeUniforms(PostChain processor, String uboKey, ManagedUniformBuffer managedUBO, float blendFactor, float viewW, float viewH, int blurAlgorithm, int sampleAmount, int useDepthMode) {
+    private static boolean writeUniforms(PostChain processor, String uboKey, ManagedUniformBuffer managedUBO, float blendFactor, float viewW, float viewH, int blurProfile, int sampleAmount, int useDepthMode) {
         List<PostPass> passes = ((PostChainAccessor) processor).getPasses();
         if (passes.isEmpty()) return false;
 
@@ -389,7 +389,7 @@ public class ShaderManager {
                 b.putVec2(viewW, viewH);
                 b.putFloat(blendFactor);
                 b.putInt(sampleAmount);
-                b.putInt(blurAlgorithm);
+                b.putInt(blurProfile);
                 b.putInt(useDepthMode);
                 b.putInt(IrisCompat.getDepthConvention());
             });
