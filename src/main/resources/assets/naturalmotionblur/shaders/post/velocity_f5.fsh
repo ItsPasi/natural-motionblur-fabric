@@ -13,7 +13,7 @@ layout(std140) uniform PreEntityBlurUniforms {
     vec2 view_res;
     float blendFactor;
     int   sampleCount;
-    int   blurAlgorithm;
+    int   blurProfile;
     int   useDepth;
 };
 
@@ -40,6 +40,12 @@ float noise(vec2 pos) {
     return fract(52.9829189 * fract(0.06711056 * pos.x + 0.00583715 * pos.y));
 }
 
+float blackmanSincWeight(float u) {
+    float z = 1.89 * u;
+    float sinc = abs(z) < 0.0001 ? 1.0 : sin(3.141592653589793 * z) / (3.141592653589793 * z);
+    return sinc * (0.42 + 0.5 * cos(3.141592653589793 * u) + 0.08 * cos(6.28318530718 * u));
+}
+
 void main() {
     ivec2 texel = ivec2(gl_FragCoord.xy);
     float depth = texelFetch(MainDepthSampler, texel, 0).x;
@@ -56,20 +62,38 @@ void main() {
 
     vec2 velocity = clampLength(texCoord - reproject(vec3(texCoord, dilatedDepth)).xy);
 
-    float speed   = length(velocity);
-    int   samples = clamp(int(ceil(speed * float(sampleCount))), 4, sampleCount);
+    float speed = length(velocity);
+    int boxSamples = clamp(int(ceil(speed * float(sampleCount))), 4, sampleCount);
+    bool useSmooth = blurProfile == 1;
+    int samples = useSmooth ? clamp(int(ceil(float(boxSamples) * 1.35)), 6, max(6, int(ceil(float(sampleCount) * 1.35)))) : boxSamples;
 
-    vec2  step         = (blendFactor * velocity) / float(samples);
+    vec2 step = blendFactor * velocity * (useSmooth ? 3.64 * 0.96 : 1.0) / float(samples);
     float centerOffset = -float(samples) * 0.5;
-    vec2  seed         = texCoord * view_res;
-    vec3  sum          = vec3(0.0);
+    vec2 seed = texCoord * view_res;
+    vec3 sum = vec3(0.0);
+    float totalWeight = 0.0;
 
     for (int i = 0; i < samples; i++) {
-        float fi     = float(i);
+        float fi = float(i);
         float jitter = noise(seed + vec2(fi, fi * 1.4));
-        vec2  pos    = texCoord + (fi + centerOffset + jitter) * step;
-        vec3  color  = texture(MainSampler, pos).rgb;
-        sum         += color * color;
+        float offset = fi + centerOffset + jitter;
+        vec2 pos = texCoord + offset * step;
+        vec3 c = texture(MainSampler, pos).rgb;
+        if (useSmooth) {
+            float weight = blackmanSincWeight(offset * 2.0 / float(samples));
+            sum += pow(max(c, vec3(0.0)), vec3(2.2)) * weight;
+            totalWeight += weight;
+        } else {
+            sum += c * c;
+            totalWeight += 1.0;
+        }
     }
-    color = vec4(sqrt(sum / float(samples)), 1.0);
+
+    if (totalWeight <= 0.0001) {
+        color = texture(MainSampler, texCoord);
+    } else if (useSmooth) {
+        color = vec4(pow(clamp(sum / totalWeight, vec3(0.0), vec3(1.0)), vec3(1.0 / 2.2)), 1.0);
+    } else {
+        color = vec4(sqrt(sum / totalWeight), 1.0);
+    }
 }

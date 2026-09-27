@@ -14,7 +14,7 @@ layout(std140) uniform PreEntityBlurUniforms {
     vec2 view_res;
     float blendFactor;
     int   sampleCount;
-    int   blurAlgorithm;
+    int   blurProfile;
     int   useDepth;
 };
 
@@ -51,6 +51,12 @@ bool stillPreEntitySurface(ivec2 texel) {
     return abs(beforeEntities - afterEntities) <= 0.0000005;
 }
 
+float blackmanSincWeight(float u) {
+    float z = 1.89 * u;
+    float sinc = abs(z) < 0.0001 ? 1.0 : sin(3.141592653589793 * z) / (3.141592653589793 * z);
+    return sinc * (0.42 + 0.5 * cos(3.141592653589793 * u) + 0.08 * cos(6.28318530718 * u));
+}
+
 void main() {
     ivec2 size = textureSize(PreDepthSampler, 0);
     ivec2 texel = clampTexel(ivec2(gl_FragCoord.xy), size);
@@ -76,40 +82,44 @@ void main() {
     if (useDepth == 2) {
         velocity = clampLength(velFull);
     } else {
-        velocity = clampLength(
-            camMag > 1e-12
-                ? velFull - velCamera * (clamp(dot(velFull, velCamera), 0.0, camMag) / camMag)
-                : velFull
-        );
+        velocity = clampLength(camMag > 1e-12 ? velFull - velCamera * (clamp(dot(velFull, velCamera), 0.0, camMag) / camMag) : velFull);
     }
 
     float speed = length(velocity);
-    int samples = clamp(int(ceil(speed * float(sampleCount))), 4, sampleCount);
+    int boxSamples = clamp(int(ceil(speed * float(sampleCount))), 4, sampleCount);
+    bool useSmooth = blurProfile == 1;
+    int samples = useSmooth ? clamp(int(ceil(float(boxSamples) * 1.35)), 6, max(6, int(ceil(float(sampleCount) * 1.35)))) : boxSamples;
 
-    vec2 step = (blendFactor * velocity) / float(samples);
+    vec2 step = blendFactor * velocity * (useSmooth ? 3.64 * 0.96 : 1.0) / float(samples);
     float centerOffset = -float(samples) * 0.5;
     vec2 seed = texCoord * view_res;
     vec3 sum = vec3(0.0);
-    int validSamples = 0;
+    float totalWeight = 0.0;
 
     for (int i = 0; i < samples; i++) {
         float fi = float(i);
         float jitter = noise(seed + vec2(fi, fi * 1.4));
-        vec2 pos = texCoord + (fi + centerOffset + jitter) * step;
+        float offset = fi + centerOffset + jitter;
+        vec2 pos = texCoord + offset * step;
         ivec2 sampleTexel = clampTexel(ivec2(pos * view_res), size);
-
-        if (!stillPreEntitySurface(sampleTexel)) {
-            continue;
-        }
+        if (!stillPreEntitySurface(sampleTexel)) continue;
 
         vec3 c = texture(MainSampler, pos).rgb;
-        sum += c * c;
-        validSamples++;
+        if (useSmooth) {
+            float weight = blackmanSincWeight(offset * 2.0 / float(samples));
+            sum += pow(max(c, vec3(0.0)), vec3(2.2)) * weight;
+            totalWeight += weight;
+        } else {
+            sum += c * c;
+            totalWeight += 1.0;
+        }
     }
 
-    if (validSamples == 0) {
+    if (totalWeight <= 0.0001) {
         color = texture(MainSampler, texCoord);
+    } else if (useSmooth) {
+        color = vec4(pow(clamp(sum / totalWeight, vec3(0.0), vec3(1.0)), vec3(1.0 / 2.2)), 1.0);
     } else {
-        color = vec4(sqrt(sum / float(validSamples)), 1.0);
+        color = vec4(sqrt(sum / totalWeight), 1.0);
     }
 }
