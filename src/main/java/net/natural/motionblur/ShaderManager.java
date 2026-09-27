@@ -116,25 +116,25 @@ public class ShaderManager {
         BlurStrengthCalculator.Result blur = calculateVelocityBlur(config);
         float viewW = client.getMainRenderTarget().width;
         float viewH = client.getMainRenderTarget().height;
-        int   algo  = config.blurAlgorithm.ordinal();
+        int   profile = config.blurProfile.ordinal();
 
         switch (pass) {
             case NORMAL_PRE -> {
                 PostChain p = getPreProcessor(client);
                 if (p != null) {
-                    writeAndRun(p, "PreEntityBlurUniforms", preEntityUBO, blur.strength(), viewW, viewH, algo, blur.sampleAmount(), client);
+                    writeAndRun(p, "PreEntityBlurUniforms", preEntityUBO, blur.strength(), viewW, viewH, profile, blur.sampleAmount(), client);
                 }
             }
             case SPECIAL_F5 -> {
                 PostChain p = getF5Processor(client);
                 if (p != null) {
-                    writeAndRun(p, "PreEntityBlurUniforms", f5EntityUBO, blur.strength(), viewW, viewH, algo, blur.sampleAmount(), client);
+                    writeAndRun(p, "PreEntityBlurUniforms", f5EntityUBO, blur.strength(), viewW, viewH, profile, blur.sampleAmount(), client);
                 }
             }
             case NORMAL_POST -> {
                 PostChain p = getPostProcessor(client);
                 if (p != null) {
-                    writeAndRun(p, "PostRenderBlurUniforms", postRenderUBO, blur.strength(), viewW, viewH, algo, blur.sampleAmount(), client);
+                    writeAndRun(p, "PostRenderBlurUniforms", postRenderUBO, blur.strength(), viewW, viewH, profile, blur.sampleAmount(), client);
                 }
                 if (includeTemporal && config.blurAlgorithm == ConfigEntries.BlurAlgorithm.HYBRID_BLENDING) {
                     applyFrameBlendingInternal();
@@ -213,7 +213,7 @@ public class ShaderManager {
 
     // UBO writing
 
-    private static void writeAndRun(PostChain processor, String uboKey, ManagedUniformBuffer managedUBO, float blendFactor, float viewW, float viewH, int blurAlgorithm, int sampleAmount, Minecraft client) {
+    private static void writeAndRun(PostChain processor, String uboKey, ManagedUniformBuffer managedUBO, float blendFactor, float viewW, float viewH, int blurProfile, int sampleAmount, Minecraft client) {
         List<PostPass> passes = ((PostChainAccessor) processor).getPasses();
         if (passes.isEmpty()) return;
 
@@ -235,7 +235,7 @@ public class ShaderManager {
                 b.putVec2(viewW, viewH);
                 b.putFloat(blendFactor);
                 b.putInt(sampleAmount);
-                b.putInt(blurAlgorithm);
+                b.putInt(blurProfile);
                 b.putInt(1);
             }
 
