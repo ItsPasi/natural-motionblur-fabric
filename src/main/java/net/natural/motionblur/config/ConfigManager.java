@@ -23,6 +23,7 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 
 public class ConfigManager {
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
@@ -41,7 +42,8 @@ public class ConfigManager {
     // Config Screen Interface
     public static Screen createConfigScreen(Screen parent) {
         ConfigEntries cfg = getConfig();
-        sanitizeConfigState(cfg);
+        boolean[] scalingAvailable = {cfg.allowsRefreshRateScaling()};
+        boolean[] scalingPreference = {cfg.refreshRateScaling};
 
         var refreshRateScalingOption = Option.<Boolean>createBuilder()
                 .name(Component.literal("Refresh Rate Scaling"))
@@ -53,9 +55,11 @@ public class ConfigManager {
                         .append(Component.literal("600 FPS on a 60 Hz monitor → strength is increased by 10x\n").withStyle(s -> s.withColor(0x5599FF)))
                         .append(Component.literal("2. ").withStyle(s -> s.withColor(0x5599FF).withBold(true)))
                         .append(Component.literal("60 FPS or less on a 60 Hz monitor → strength is not changed").withStyle(s -> s.withColor(0x5599FF)))))
-                .binding(true, () -> cfg.refreshRateScaling, newValue -> cfg.refreshRateScaling = newValue)
+                .binding(true, () -> scalingAvailable[0] && cfg.refreshRateScaling, newValue -> {
+                    if (scalingAvailable[0]) cfg.refreshRateScaling = newValue;
+                })
                 .controller(opt -> BooleanControllerBuilder.create(opt).coloured(true))
-                .available(cfg.allowsRefreshRateScaling())
+                .available(scalingAvailable[0])
                 .build();
 
         var strengthOption = Option.<Float>createBuilder()
@@ -65,8 +69,29 @@ public class ConfigManager {
                         \s
                         Default setting (1.0) blurs frames ideally in correlation to the framerate.""")))
                 .binding(1.0F, () -> cfg.motionBlurStrength, newValue -> cfg.motionBlurStrength = newValue)
-                .controller(opt -> FloatSliderControllerBuilder.create(opt).range(0f, 2f).step(0.1f))
+                .controller(opt -> FloatSliderControllerBuilder.create(opt)
+                        .range(0f, 2f)
+                        .step(0.01f)
+                        .valueFormatter(value -> Component.literal(String.format(Locale.ROOT, "%.2f", value))))
                 .available(cfg.showsStrengthSlider())
+                .build();
+
+        var blurProfileOption = Option.<ConfigEntries.BlurProfile>createBuilder()
+                .name(Component.literal("Blur Profile"))
+                .description(OptionDescription.of(Component.empty()
+                        .append(Component.literal("Changes the sampling profile used by velocity blur.\n\n"))
+                        .append(Component.literal("Default").withStyle(style -> style.withColor(0x5599FF).withBold(true)))
+                        .append(Component.literal("\nClassic box-blur frame transition.\n\n"))
+                        .append(Component.literal("Smooth").withStyle(style -> style.withColor(0xFFFF55).withBold(true)))
+                        .append(Component.literal("\nSmoother frame transition but might appear slightly more blurry."))))
+                .binding(ConfigEntries.BlurProfile.DEFAULT, () -> cfg.blurProfile, value -> cfg.blurProfile = value)
+                .controller(opt -> EnumControllerBuilder.create(opt)
+                        .enumClass(ConfigEntries.BlurProfile.class)
+                        .valueFormatter(value -> switch (value) {
+                            case DEFAULT -> Component.literal("Default").withStyle(style -> style.withColor(0x5599FF));
+                            case SMOOTH -> Component.literal("Smooth").withStyle(style -> style.withColor(0xFFFF55));
+                        }))
+                .available(cfg.usesVelocityBlur())
                 .build();
 
         var algorithmOption = Option.<ConfigEntries.BlurAlgorithm>createBuilder()
@@ -90,11 +115,20 @@ public class ConfigManager {
                         .append(Component.literal("Matches LABYMOD MAX, LUNAR V2/V3, BLC 3.0/Badlion.").withStyle(style -> style.withColor(0xAAAAAA).withItalic(true)))))
                 .binding(ConfigEntries.BlurAlgorithm.VELOCITY_BASED, () -> cfg.blurAlgorithm, newValue -> cfg.blurAlgorithm = newValue)
                 .listener((opt, newValue) -> {
-                    if (newValue != ConfigEntries.BlurAlgorithm.VELOCITY_BASED) {
-                        cfg.refreshRateScaling = false;
+                    boolean showScaling = newValue == ConfigEntries.BlurAlgorithm.VELOCITY_BASED;
+                    if (showScaling != scalingAvailable[0]) {
+                        if (showScaling) {
+                            scalingAvailable[0] = true;
+                            refreshRateScalingOption.setAvailable(true);
+                            refreshRateScalingOption.requestSet(scalingPreference[0]);
+                        } else {
+                            scalingPreference[0] = refreshRateScalingOption.pendingValue();
+                            scalingAvailable[0] = false;
+                            refreshRateScalingOption.setAvailable(false);
+                        }
                     }
-                    refreshRateScalingOption.setAvailable(newValue == ConfigEntries.BlurAlgorithm.VELOCITY_BASED);
                     strengthOption.setAvailable(true);
+                    blurProfileOption.setAvailable(newValue == ConfigEntries.BlurAlgorithm.VELOCITY_BASED || newValue == ConfigEntries.BlurAlgorithm.HYBRID_BLENDING);
                 })
                 .controller(opt -> EnumControllerBuilder.create(opt)
                         .enumClass(ConfigEntries.BlurAlgorithm.class)
@@ -119,6 +153,7 @@ public class ConfigManager {
                         .option(refreshRateScalingOption)
                         .option(strengthOption)
                         .option(algorithmOption)
+                        .option(blurProfileOption)
                         .build())
 
                 .category(ConfigCategory.createBuilder()
@@ -207,19 +242,9 @@ public class ConfigManager {
                 try { config.blurAlgorithm = ConfigEntries.BlurAlgorithm.valueOf(json.get("blurAlgorithm").getAsString().toUpperCase()); }
                 catch (Exception e) { config.blurAlgorithm = ConfigEntries.BlurAlgorithm.VELOCITY_BASED; errorMessages.add("Blur Algorithm option of \"Natural Motion Blur\" was invalid and has been reset to default (Velocity Based)."); modified = true; }
             }
-            ConfigEntries sanitizedConfig = new ConfigEntries();
-            sanitizedConfig.enabled = config.enabled;
-            sanitizedConfig.refreshRateScaling = config.refreshRateScaling;
-            sanitizedConfig.motionBlurStrength = config.motionBlurStrength;
-            sanitizedConfig.recordingOverlayEnabled = config.recordingOverlayEnabled;
-            sanitizedConfig.recordingOverlayTargetFPS = config.recordingOverlayTargetFPS;
-            sanitizedConfig.blurAlgorithm = config.blurAlgorithm;
-            sanitizeConfigState(sanitizedConfig);
-            if (sanitizedConfig.refreshRateScaling != config.refreshRateScaling
-                    || sanitizedConfig.motionBlurStrength != config.motionBlurStrength) {
-                config.refreshRateScaling = sanitizedConfig.refreshRateScaling;
-                config.motionBlurStrength = sanitizedConfig.motionBlurStrength;
-                modified = true;
+            if (json.has("blurProfile")) {
+                try { config.blurProfile = ConfigEntries.BlurProfile.valueOf(json.get("blurProfile").getAsString().toUpperCase()); }
+                catch (Exception e) { config.blurProfile = ConfigEntries.BlurProfile.DEFAULT; errorMessages.add("Invalid blur profile; reset to Default."); modified = true; }
             }
             if (json.has("recordingOverlayTargetFPS")) {
                 try {
@@ -245,14 +270,7 @@ public class ConfigManager {
         return Boolean.parseBoolean(s);
     }
 
-    private static void sanitizeConfigState(ConfigEntries cfg) {
-        if (!cfg.allowsRefreshRateScaling()) {
-            cfg.refreshRateScaling = false;
-        }
-    }
-
     public static void saveConfig() {
-        if (config != null) sanitizeConfigState(config);
         File configFile = getConfigFile();
         try {
             FileUtils.write(configFile, GSON.toJson(config), StandardCharsets.UTF_8);
