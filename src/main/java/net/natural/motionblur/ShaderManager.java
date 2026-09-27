@@ -116,7 +116,7 @@ public class ShaderManager {
         BlurStrengthCalculator.Result blur = calculateVelocityBlur(config);
         float viewW = client.getMainRenderTarget().width;
         float viewH = client.getMainRenderTarget().height;
-        int   algo  = config.blurAlgorithm.ordinal();
+        int   algo  = config.blurProfile.ordinal();
 
         switch (pass) {
             case NORMAL_PRE -> {
@@ -213,7 +213,7 @@ public class ShaderManager {
 
     // UBO writing
 
-    private static void writeAndRun(PostChain processor, String uboKey, ManagedUniformBuffer managedUBO, float blendFactor, float viewW, float viewH, int blurAlgorithm, int sampleAmount, Minecraft client) {
+    private static void writeAndRun(PostChain processor, String uboKey, ManagedUniformBuffer managedUBO, float blendFactor, float viewW, float viewH, int blurProfile, int sampleAmount, Minecraft client) {
         List<PostPass> passes = ((PostChainAccessor) processor).getPasses();
         if (passes.isEmpty()) return;
 
@@ -235,7 +235,7 @@ public class ShaderManager {
                 b.putVec2(viewW, viewH);
                 b.putFloat(blendFactor);
                 b.putInt(sampleAmount);
-                b.putInt(blurAlgorithm);
+                b.putInt(blurProfile);
                 b.putInt(1);
             }
 
