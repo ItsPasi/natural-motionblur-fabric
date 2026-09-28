@@ -86,11 +86,11 @@ void main() {
     }
 
     float speed = length(velocity);
-    int boxSamples = clamp(int(ceil(speed * float(sampleCount))), 4, sampleCount);
-    bool useSmooth = blurProfile == 1;
-    int samples = useSmooth ? clamp(int(ceil(float(boxSamples) * 1.35)), 6, max(6, int(ceil(float(sampleCount) * 1.35)))) : boxSamples;
+    int baseSamples = clamp(int(ceil(speed * float(sampleCount))), 4, sampleCount);
+    bool isWeighted = blurProfile == 1;
+    int samples = isWeighted ? clamp(int(ceil(float(baseSamples) * 1.35)), 6, max(6, int(ceil(float(sampleCount) * 1.35)))) : baseSamples;
 
-    vec2 step = blendFactor * velocity * (useSmooth ? 3.64 * 0.96 : 1.0) / float(samples);
+    vec2 step = blendFactor * velocity * (isWeighted ? 3.64 * 0.96 : 1.0) / float(samples);
     float centerOffset = -float(samples) * 0.5;
     vec2 seed = texCoord * view_res;
     vec3 sum = vec3(0.0);
@@ -105,7 +105,7 @@ void main() {
         if (!stillPreEntitySurface(sampleTexel)) continue;
 
         vec3 c = texture(MainSampler, pos).rgb;
-        if (useSmooth) {
+        if (isWeighted) {
             float weight = blackmanSincWeight(offset * 2.0 / float(samples));
             sum += pow(max(c, vec3(0.0)), vec3(2.2)) * weight;
             totalWeight += weight;
@@ -117,7 +117,7 @@ void main() {
 
     if (totalWeight <= 0.0001) {
         color = texture(MainSampler, texCoord);
-    } else if (useSmooth) {
+    } else if (isWeighted) {
         color = vec4(pow(clamp(sum / totalWeight, vec3(0.0), vec3(1.0)), vec3(1.0 / 2.2)), 1.0);
     } else {
         color = vec4(sqrt(sum / totalWeight), 1.0);
