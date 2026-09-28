@@ -11,8 +11,8 @@ public class ConfigEntries {
     public enum BlurAlgorithm {VELOCITY_BASED, FRAME_BLENDING, HYBRID_BLENDING, ACCUMULATION_MAX, ACCUMULATION_MIX}
     public BlurAlgorithm blurAlgorithm = BlurAlgorithm.VELOCITY_BASED;
 
-    public enum BlurProfile {DEFAULT, SMOOTH}
-    public BlurProfile blurProfile = BlurProfile.DEFAULT;
+    public enum BlurProfile {UNIFORM, WEIGHTED}
+    public BlurProfile blurProfile = BlurProfile.UNIFORM;
 
     public boolean usesVelocityBlur() {return blurAlgorithm == BlurAlgorithm.VELOCITY_BASED || blurAlgorithm == BlurAlgorithm.HYBRID_BLENDING;}
     public boolean allowsRefreshRateScaling() {return blurAlgorithm == BlurAlgorithm.VELOCITY_BASED;}
