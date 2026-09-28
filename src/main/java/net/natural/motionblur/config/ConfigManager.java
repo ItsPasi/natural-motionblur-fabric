@@ -80,16 +80,16 @@ public class ConfigManager {
                 .name(Component.literal("Blur Profile"))
                 .description(OptionDescription.of(Component.empty()
                         .append(Component.literal("Changes the sampling profile used by velocity blur.\n\n"))
-                        .append(Component.literal("Default").withStyle(style -> style.withColor(0x5599FF).withBold(true)))
+                        .append(Component.literal("Uniform").withStyle(style -> style.withColor(0x5599FF).withBold(true)))
                         .append(Component.literal("\nClassic box-blur frame transition.\n\n"))
-                        .append(Component.literal("Smooth").withStyle(style -> style.withColor(0xFFFF55).withBold(true)))
+                        .append(Component.literal("Weighted").withStyle(style -> style.withColor(0xFFFF55).withBold(true)))
                         .append(Component.literal("\nSmoother frame transition but might appear slightly more blurry."))))
-                .binding(ConfigEntries.BlurProfile.DEFAULT, () -> cfg.blurProfile, value -> cfg.blurProfile = value)
+                .binding(ConfigEntries.BlurProfile.UNIFORM, () -> cfg.blurProfile, value -> cfg.blurProfile = value)
                 .controller(opt -> EnumControllerBuilder.create(opt)
                         .enumClass(ConfigEntries.BlurProfile.class)
                         .valueFormatter(value -> switch (value) {
-                            case DEFAULT -> Component.literal("Default").withStyle(style -> style.withColor(0x5599FF));
-                            case SMOOTH -> Component.literal("Smooth").withStyle(style -> style.withColor(0xFFFF55));
+                            case UNIFORM -> Component.literal("Uniform").withStyle(style -> style.withColor(0x5599FF));
+                            case WEIGHTED -> Component.literal("Weighted").withStyle(style -> style.withColor(0xFFFF55));
                         }))
                 .available(cfg.usesVelocityBlur())
                 .build();
@@ -244,7 +244,7 @@ public class ConfigManager {
             }
             if (json.has("blurProfile")) {
                 try { config.blurProfile = ConfigEntries.BlurProfile.valueOf(json.get("blurProfile").getAsString().toUpperCase()); }
-                catch (Exception e) { config.blurProfile = ConfigEntries.BlurProfile.DEFAULT; errorMessages.add("Invalid blur profile; reset to Default."); modified = true; }
+                catch (Exception e) { config.blurProfile = ConfigEntries.BlurProfile.UNIFORM; errorMessages.add("Invalid blur profile; reset to Default."); modified = true; }
             }
             if (json.has("recordingOverlayTargetFPS")) {
                 try {
