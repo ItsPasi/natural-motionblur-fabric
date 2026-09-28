@@ -244,7 +244,7 @@ public class ConfigManager {
             }
             if (json.has("blurProfile")) {
                 try { config.blurProfile = ConfigEntries.BlurProfile.valueOf(json.get("blurProfile").getAsString().toUpperCase()); }
-                catch (Exception e) { config.blurProfile = ConfigEntries.BlurProfile.UNIFORM; errorMessages.add("Invalid blur profile; reset to Default."); modified = true; }
+                catch (Exception e) { config.blurProfile = ConfigEntries.BlurProfile.UNIFORM; errorMessages.add("Blur Profile option of \"Natural Motion Blur\" was invalid and has been reset to default (Uniform)."); modified = true; }
             }
             if (json.has("recordingOverlayTargetFPS")) {
                 try {
